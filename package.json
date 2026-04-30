@@ -1,0 +1,11 @@
+{
+  "name": "kodedocs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "highlight": "node tools/shiki-highlighter.mjs"
+  },
+  "dependencies": {
+    "shiki": "^3.12.2"
+  }
+}
