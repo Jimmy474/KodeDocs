@@ -3,7 +3,7 @@ title: Dynamic Registry
 description: A guide to creating your own dynamic registry with the Fabric API.
 authors:
   - Jimmy474
-author-not-on-github:
+author-nogithub:
   - Jimmy474
 ---
 

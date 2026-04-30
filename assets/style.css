@@ -318,7 +318,6 @@ select:focus-visible {
 }
 
 .right-sidebar {
-    display: block;
     flex-grow: 1;
     position: relative;
     justify-content: flex-start;
@@ -341,9 +340,12 @@ select:focus-visible {
 }
 
 .toc-marker {
+    position: absolute;
+    left: 0;
+    width: 2px;
     height: 30px;
-    margin-left: -16px;
-    border-left: 2px solid var(--brand);
+    background: var(--brand);
+    transition: transform 0.25s ease, height 0.25s ease;
 }
 
 .toc-title,
@@ -356,6 +358,7 @@ select:focus-visible {
 
 .nav-tree,
 .nav-tree ul,
+.rail-toc-section ul,
 .toc-section ul,
 .toc-list {
     margin: 0;
@@ -405,7 +408,7 @@ select:focus-visible {
 }
 
 .sidebar a,
-.toc-section a,
+.toc-level a,
 .toc-list a {
     display: block;
     border-radius: 6px;
@@ -421,19 +424,19 @@ select:focus-visible {
 }
 
 .sidebar a:hover,
-.toc-section a:hover,
+.toc-level a:hover,
 .toc-list a:hover {
-    color: var(--brand);
+    color: var(--text);
 }
 
 .sidebar a.is-active,
 .sidebar a[aria-current="page"] {
-    color: var(--brand);
+    color: var(--text);
     font-weight: 700;
     background: var(--brand-soft);
 }
 
-.toc-section a,
+.toc-level a,
 .toc-list a {
     border-left: 2px solid transparent;
     border-radius: 0;
@@ -441,6 +444,10 @@ select:focus-visible {
 
 .toc-level {
     padding-left: 16px;
+}
+
+.toc-level a.active{
+    color: var(--text);
 }
 
 .empty-panel {
@@ -483,13 +490,32 @@ select:focus-visible {
     animation: fade-up 240ms ease both;
 }
 
-.main-authors {
-    display: flex;
+.main-authors, .sidebar-authors {
+    display: none;
     align-items: center;
-    gap: 12px;
-    margin: -10px 0 34px;
+    gap: 8px;
+    margin-top: 8px;
     color: var(--text-muted);
     font-size: 13px;
+    font-weight: 700;
+    flex-flow: wrap;
+}
+
+.sidebar-authors {
+    padding-left: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.authors-title{
+    width: 100%;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-soft);
+    padding-top: 16px;
+    margin-top: 20px;
+    letter-spacing: 0.06em;
+    font-size: 12px;
     font-weight: 700;
 }
 
@@ -662,6 +688,14 @@ body.controls-open .mobile-backdrop {
         grid-template-rows: var(--rail-height) auto;
     }
 
+    .main-authors{
+        display: flex;
+    }
+
+    .sidebar-authors{
+        display: none;
+    }
+
     .collapsed-rail {
         position: sticky;
         left: 0;
@@ -669,7 +703,8 @@ body.controls-open .mobile-backdrop {
         top: var(--header-height);
         z-index: 20;
         display: flex;
-        justify-content: flex-end;
+        justify-content: flex-start;
+        align-items: center;
         height: var(--rail-height);
         padding-left: var(--sidebar-width);
         border-bottom: 1px solid var(--border-soft);
@@ -691,8 +726,8 @@ body.controls-open .mobile-backdrop {
 
     .rail-toc-popover {
         position: absolute;
-        top: calc(100% + 8px);
-        right: 0;
+        top: calc(100% - 4px);
+        left: 0;
         width: min(320px, calc(100vw - 32px));
         max-height: min(460px, calc(100vh - var(--rail-height) - 24px));
         overflow-y: auto;

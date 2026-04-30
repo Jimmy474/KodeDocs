@@ -166,6 +166,7 @@ function setup() {
             if (isVersionedPath()) writeRoute(false);
             bindLinks();
             scrollToHash();
+            setupMarker();
         } catch (error) {
             console.error(error);
             renderErrorPage(page);
@@ -178,14 +179,13 @@ function setup() {
         main.classList.add("docs-content", "vp-doc");
         const authors = Array.isArray(content.metadata?.authors) ? content.metadata.authors : [];
         main.innerHTML = `
-            <h1>${escapeHtml(content.title)}</h1>
-            ${content.description ? `<p class="lead">${escapeHtml(content.description)}</p>` : ""}
             ${authors.length ? `
                 <section class="main-authors" aria-label="Page authors">
-                    <span>Authors</span>
                     <div class="authors">${authors.map(renderAuthor).join("")}</div>
                 </section>
             ` : ""}
+            <h1>${escapeHtml(content.title)}</h1>
+            ${content.description ? `<p class="lead">${escapeHtml(content.description)}</p>` : ""}
             ${content.html}
         `;
     }
@@ -195,12 +195,18 @@ function setup() {
         const railToc = document.querySelector("[data-rail-toc]");
         if (!aside) return;
 
+        const authors = Array.isArray(content.metadata?.authors) ? content.metadata.authors : [];
         const headings = (content.headings || []).filter((heading) => heading.level >= 2 && heading.level <= 4);
+        const renderedToc = renderTOC(headings);
         const tocHtml = headings.length ? `
             <section class="toc-section">
                 <div class="toc-marker"></div>
                 <div class="toc-title">On This Page</div>
-                ${renderTOC(headings)}
+                ${renderedToc}
+            </section>
+            <section class="sidebar-authors" aria-label="Page authors">
+                <div class="authors-title">PAGE AUTHORS</div>
+                <div class="authors">${authors.map(renderAuthor).join("")}</div>
             </section>
         ` : `<p class="empty-panel">No sections on this page.</p>`;
 
@@ -209,7 +215,14 @@ function setup() {
                 ${tocHtml}
             </div>
         `;
-        if (railToc) railToc.innerHTML = tocHtml;
+        if (railToc) {
+            railToc.innerHTML = `
+                <section class="rail-toc-section">
+                    <div class="toc-title">On This Page</div>
+                    ${renderedToc}
+                </section>
+            `;
+        }
     }
 
     function renderTOC(headings) {
@@ -302,7 +315,10 @@ function setup() {
             `;
         }
         const railToc = document.querySelector("[data-rail-toc]");
-        if (railToc) railToc.innerHTML = aside?.innerHTML || "";
+        if (railToc) {
+            railToc.innerHTML = aside?.innerHTML || "";
+            railToc.querySelector(".toc-marker").remove();
+        }
     }
 
     function renderErrorPage(page) {
@@ -440,7 +456,7 @@ function setup() {
         if (!window.location.hash) return;
         requestAnimationFrame(() => {
             const id = decodeURIComponent(window.location.hash.slice(1));
-            document.getElementById(id)?.scrollIntoView();
+            document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
         });
     }
 
@@ -491,6 +507,49 @@ function setup() {
             }
         }
     });
+
+    function setupMarker(){
+        const headings = document.querySelectorAll("h2, h3, h4").entries().map(([i, h]) => {
+            return h.querySelector("a");
+        });
+        const links = document.querySelector(".toc-section").querySelectorAll("a");
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const id = entry.target.id;
+                    console.log("intersecting", id);
+
+                    links.forEach(link => {
+                        link.classList.toggle(
+                            "active",
+                            link.getAttribute("href") === "#" + id
+                        );
+                    });
+
+                    moveIndicator();
+                }
+            });
+        }, {
+            rootMargin: "-40% 0px -50% 0px",
+            threshold: 0
+        });
+
+        headings.forEach(h => observer.observe(h));
+    }
+
+    function moveIndicator() {
+        const active = document.querySelector("a.active");
+        const indicator = document.querySelector(".toc-marker");
+
+        if (!active || !indicator) return;
+
+        const top = active.offsetTop;
+        const height = active.offsetHeight;
+
+        indicator.style.transform = `translateY(${top}px)`;
+        indicator.style.height = `${height}px`;
+    }
 }
 
 setup();
+

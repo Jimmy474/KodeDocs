@@ -1,5 +1,5 @@
 ---
-title: Test
+title: Index
 description: test description
 ---
 

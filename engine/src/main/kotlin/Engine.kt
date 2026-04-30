@@ -1,57 +1,56 @@
-import kotlinx.serialization.KSerializer
-import java.io.File
+
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import java.io.File
 
 class Engine {
+    private val json = Json{
+        prettyPrint = true
+    }
     private val parser = MarkDownParser()
     private val preProcessor = PreProcessor()
 
     @Serializable
-    data class Page(
+    data class ManifestPageEntry(
         val version: String,
         val language: String,
         val sourcePath: String,
         val contentPath: String,
         val title: String,
         val description: String?
-    )
+    ){
+        fun pageKey(): String = "$version/$language/$sourcePath"
+
+    }
 
     @Serializable
     data class PageContent(
-        val page: Page,
+        val manifestPageEntry: ManifestPageEntry,
         val html: String,
-
-        val metadata: Map<String, @Serializable(with = MetadataAnySerializer::class) Any>,
+        val metadata: Map<String, List<String>>,
         val headings: List<MarkDownParser.Heading>
     )
 
-    class MetadataAnySerializer(): KSerializer<Any>{
-        override val descriptor: SerialDescriptor = String.serializer().descriptor
-        override fun serialize(encoder: Encoder, value: Any) {
-            when (value) {
-                is String -> encoder.encodeString(value)
-                is List<*> -> encoder.encodeSerializableValue(ListSerializer(String.serializer()), value.map { it.toString() })
-                else -> throw IllegalArgumentException("Metadata must be a String or a List<String>")
-            }
-        }
+    @Serializable
+    data class Page(
+        val title: String,
+        val description: String?,
+        val html: String,
+        val metadata: Map<String, List<String>>,
+        val headings: List<MarkDownParser.Heading>
+    )
 
-        override fun deserialize(decoder: Decoder): Any {
-            val value = decoder.decodeString()
-            return when {
-                value.startsWith("[") && value.endsWith("]") -> {
-                    value.drop(1).dropLast(1).split(",").map { it.trim() }
-                }
-                else -> value
-            }
-        }
-
-    }
+    @Serializable
+    data class Manifest(
+        val defaultVersion: String,
+        val defaultLanguage: String,
+        val defaultPage: String,
+        val versions: List<String>,
+        val languages: List<String>,
+        val languagesByVersion: Map<String, List<String>>,
+        val pages: Map<String, ManifestPageEntry>,
+        val trees: Map<String, List<TreeNode>>
+    )
 
     fun build(docsDir: File, outputDir: File) {
         if (!docsDir.exists()) throw IllegalArgumentException("Docs directory does not exist")
@@ -91,14 +90,13 @@ class Engine {
                 for (mdFile in mdFiles) {
                     val sourcePath = mdFile.relativeTo(langDir).invariantSeparatorsPath
                     val pagePath = sourcePath.removeSuffix(".md")
-                    val preProcessed = preProcessor.process(mdFile)
-                    val parsed = parser.parse(preProcessed.content)
-                    val title = preProcessed.metadata["title"] as? String
-                        ?: mdFile.nameWithoutExtension.toTitle()
-                    val description = preProcessed.metadata["description"] as? String
+                    val preProcessedContent = preProcessor.process(mdFile)
+                    val parsed = parser.parse(preProcessedContent)
+                    val title = parsed.metadata["title"]?.get(0) ?: mdFile.nameWithoutExtension.toTitle()
+                    val description = parsed.metadata["description"]?.get(0) ?: ""
                     val contentPath = "content/$version/$language/${pagePath}.json"
 
-                    val page = Page(
+                    val manifestPageEntry = ManifestPageEntry(
                         version = version,
                         language = language,
                         sourcePath = sourcePath,
@@ -107,9 +105,9 @@ class Engine {
                         description = description
                     )
                     pageContents += PageContent(
-                        page = page,
+                        manifestPageEntry = manifestPageEntry,
                         html = parsed.html,
-                        metadata = preProcessed.metadata,
+                        metadata = parsed.metadata,
                         headings = parsed.headings
                     )
                 }
@@ -118,21 +116,21 @@ class Engine {
 
         val highlightedHtml = highlightPages(outputDir, pageContents).associateBy { it.id }
         pageContents.forEach { content ->
-            outputDir.resolve(content.page.contentPath).also { outFile ->
+            outputDir.resolve(content.manifestPageEntry.contentPath).also { outFile ->
                 outFile.parentFile.mkdirs()
                 outFile.writeText(
-                    pageJson(
-                        title = content.page.title,
-                        description = content.page.description,
-                        html = highlightedHtml[content.page.pageKey()]?.html ?: content.html,
+                    json.encodeToString(Page(
+                        title = content.manifestPageEntry.title,
+                        description = content.manifestPageEntry.description,
+                        html = highlightedHtml[content.manifestPageEntry.pageKey()]?.html ?: content.html,
                         metadata = content.metadata,
                         headings = content.headings
-                    )
+                    ))
                 )
             }
         }
 
-        outputDir.resolve("manifest.json").writeText(manifestJson(versions, languagesByVersion, pageContents.map { it.page }))
+        outputDir.resolve("manifest.json").writeText(manifestJson(versions, languagesByVersion, pageContents.map { it.manifestPageEntry }))
     }
 
     private fun writeShell(outputDir: File) {
@@ -160,7 +158,7 @@ class Engine {
     private fun manifestJson(
         versions: List<String>,
         languagesByVersion: Map<String, List<String>>,
-        pages: List<Page>
+        manifestPageEntries: List<ManifestPageEntry>
     ): String {
         val defaultVersion = when {
             "latest" in versions -> "latest"
@@ -172,112 +170,68 @@ class Engine {
                 ?: languagesByVersion.values.flatten().firstOrNull()
                 ?: ""
         }
-        val defaultPage = pages.firstOrNull {
+        val defaultPage = manifestPageEntries.firstOrNull {
             it.version == defaultVersion && it.language == defaultLanguage && it.sourcePath == "index.md"
-        }?.sourcePath ?: pages.firstOrNull {
+        }?.sourcePath ?: manifestPageEntries.firstOrNull {
             it.version == defaultVersion && it.language == defaultLanguage
-        }?.sourcePath ?: pages.firstOrNull()?.sourcePath ?: "index.md"
+        }?.sourcePath ?: manifestPageEntries.firstOrNull()?.sourcePath ?: "index.md"
 
         val allLanguages = languagesByVersion.values.flatten().distinct().sorted()
-        val pageEntries = pages.joinToString(",\n") { page ->
-            val key = page.pageKey()
-            """
-              ${key.jsonString()}: {
-                "version": ${page.version.jsonString()},
-                "language": ${page.language.jsonString()},
-                "sourcePath": ${page.sourcePath.jsonString()},
-                "contentPath": ${page.contentPath.jsonString()},
-                "title": ${page.title.jsonString()},
-                "description": ${page.description.jsonNullableString()}
-              }""".trimIndent()
-        }
-        val treeEntries = pages
-            .groupBy { "${it.version}/${it.language}" }
-            .toSortedMap()
-            .map { (key, pageGroup) ->
-                "  ${key.jsonString()}: ${treeJson(pageGroup)}"
-            }
-            .joinToString(",\n")
-        val langsByVersionJson = languagesByVersion.entries.joinToString(",\n") { (version, languages) ->
-            "  ${version.jsonString()}: ${languages.jsonArray()}"
-        }
 
-        return """
-            {
-              "defaultVersion": ${defaultVersion.jsonString()},
-              "defaultLanguage": ${defaultLanguage.jsonString()},
-              "defaultPage": ${defaultPage.jsonString()},
-              "versions": ${versions.jsonArray()},
-              "languages": ${allLanguages.jsonArray()},
-              "languagesByVersion": {
-            $langsByVersionJson
-              },
-              "pages": {
-            $pageEntries
-              },
-              "trees": {
-            $treeEntries
-              }
-            }
-        """.trimIndent()
+        val manifest = Manifest(
+            defaultVersion = defaultVersion,
+            defaultLanguage = defaultLanguage,
+            defaultPage = defaultPage,
+            versions = versions,
+            languages = allLanguages,
+            languagesByVersion = languagesByVersion,
+            pages = manifestPageEntries.associateBy { it.pageKey() },
+            trees = manifestPageEntries.groupBy { "${it.version}/${it.language}" }.mapValues { treeJson(it.value) }
+        )
+
+        return json.encodeToString(manifest)
     }
 
-    private fun pageJson(
-        title: String,
-        description: String?,
-        html: String,
-        metadata: Map<String, Any>,
-        headings: List<MarkDownParser.Heading>
-    ): String = """
-        {
-          "title": ${title.jsonString()},
-          "description": ${description.jsonNullableString()},
-          "html": ${html.jsonString()},
-          "metadata": ${metadataJson(metadata)},
-          "headings": ${headingsJson(headings)}
-        }
-    """.trimIndent()
-
-    private fun treeJson(pages: List<Page>): String {
+    private fun treeJson(manifestPageEntries: List<ManifestPageEntry>): List<TreeNode> {
         val root = NavNode("")
-        pages.sortedBy { it.sourcePath }.forEach { page ->
+        manifestPageEntries.sortedBy { it.sourcePath }.forEach { page ->
             val parts = page.sourcePath.split("/")
             var current = root
             parts.dropLast(1).forEach { part ->
                 current = current.children.getOrPut(part) { NavNode(part) }
             }
-            current.pages += page
+            current.manifestPageEntries += page
         }
         return navChildrenJson(root)
     }
 
-    private fun navChildrenJson(node: NavNode): String {
+    private fun navChildrenJson(node: NavNode): List<TreeNode> {
         val groups = node.children.values.sortedBy { it.name }.map {
-            """
-              {
-                "type": "group",
-                "title": ${it.name.toTitle().jsonString()},
-                "children": ${navChildrenJson(it)}
-              }""".trimIndent()
+            TreeNode(TreeNode.TreeNodeType.Group, it.name.toTitle(),navChildrenJson(it))
         }
-        val files = node.pages.sortedBy { it.sourcePath }.map {
-            """
-              {
-                "type": "page",
-                "title": ${it.title.jsonString()},
-                "path": ${it.sourcePath.jsonString()}
-              }""".trimIndent()
+        val files = node.manifestPageEntries.sortedBy { it.sourcePath }.map {
+            TreeNode(TreeNode.TreeNodeType.Page, it.title, path = it.sourcePath)
         }
-        return (groups + files).joinToString(prefix = "[", postfix = "]", separator = ",\n")
+        return (groups + files)
     }
 
-    private data class NavNode(
+    @Serializable
+    data class TreeNode(
+        val type: TreeNodeType,
+        val title: String,
+        val children: List<TreeNode> = emptyList(),
+        val path: String = ""
+    ){
+        enum class TreeNodeType {
+            Group, Page
+        }
+    }
+
+    data class NavNode(
         val name: String,
         val children: MutableMap<String, NavNode> = linkedMapOf(),
-        val pages: MutableList<Page> = mutableListOf()
+        val manifestPageEntries: MutableList<ManifestPageEntry> = mutableListOf()
     )
-
-    private fun Page.pageKey(): String = "$version/$language/$sourcePath"
 
     @Serializable
     data class HighlightedPage(
@@ -299,7 +253,7 @@ class Engine {
 
         inputFile.writeText(
             pages.joinToString(prefix = """{"pages":[""", postfix = "]}", separator = ",") { content ->
-                """{"id": ${content.page.pageKey().jsonString()}, "html": ${content.html.jsonString()}}"""
+                """{"id": ${content.manifestPageEntry.pageKey().jsonString()}, "html": ${content.html.jsonString()}}"""
             }
         )
 
@@ -316,7 +270,7 @@ class Engine {
                 )
             }
             if (!outputFile.exists()) return emptyList()
-            val result = Json.decodeFromString<Result>(outputFile.readText())
+            val result = json.decodeFromString<Result>(outputFile.readText())
             return result.pages
         }catch (e: StackOverflowError) {
             e.printStackTrace()
@@ -326,22 +280,6 @@ class Engine {
             outputFile.delete()
         }
     }
-
-    private fun metadataJson(metadata: Map<String, Any>): String {
-        if (metadata.isEmpty()) return "{}"
-        return metadata.entries.joinToString(prefix = "{", postfix = "}") { (key, value) ->
-            val jsonValue = when (value) {
-                is List<*> -> value.filterIsInstance<String>().jsonArray()
-                else -> value.toString().jsonString()
-            }
-            "${key.jsonString()}: $jsonValue"
-        }
-    }
-
-    private fun headingsJson(headings: List<MarkDownParser.Heading>): String =
-        headings.joinToString(prefix = "[", postfix = "]") { heading ->
-            """{"level": ${heading.level}, "text": ${heading.text.jsonString()}, "id": ${heading.id.jsonString()}}"""
-        }
 
     private fun String.toTitle(): String =
         replace("-", " ")
@@ -367,41 +305,5 @@ class Engine {
             }
         }
         append('"')
-    }
-
-    private fun String?.jsonNullableString(): String = this?.jsonString() ?: "null"
-
-    private fun List<String>.jsonArray(): String = joinToString(prefix = "[", postfix = "]") { it.jsonString() }
-
-    private fun String.jsonUnescape(): String {
-        val output = StringBuilder()
-        var index = 0
-        while (index < length) {
-            val char = this[index]
-            if (char != '\\' || index == lastIndex) {
-                output.append(char)
-                index++
-                continue
-            }
-
-            when (val escaped = this[index + 1]) {
-                '"' -> output.append('"')
-                '\\' -> output.append('\\')
-                '/' -> output.append('/')
-                'b' -> output.append('\b')
-                'f' -> output.append('\u000C')
-                'n' -> output.append('\n')
-                'r' -> output.append('\r')
-                't' -> output.append('\t')
-                'u' -> {
-                    val code = substring(index + 2, index + 6).toInt(16)
-                    output.append(code.toChar())
-                    index += 4
-                }
-                else -> output.append(escaped)
-            }
-            index += 2
-        }
-        return output.toString()
     }
 }

@@ -1,7 +1,6 @@
 import java.io.File
 
 class PreProcessor {
-    data class ProcessedResult(val content: String, val metadata: Map<String, Any>)
 
     companion object{
         const val KODEDOCS_PREFIX = "kodedocs"
@@ -11,12 +10,11 @@ class PreProcessor {
 
     }
 
-    fun process(input: File): ProcessedResult {
+    fun process(input: File): String {
         val rawContent = input.readText()
-        val (metadata, contentWithoutFrontmatter) = extractFrontmatter(rawContent,input.path)
         
         val regex = Regex("""```$KODEDOCS_PREFIX\s+([^`]*)```""")
-        val processedContent = contentWithoutFrontmatter.replace(regex) { matchResult ->
+        val processedContent = rawContent.replace(regex) { matchResult ->
             val args = parseArgs(matchResult.groupValues[1])
 
             val file = args["file"] ?: throw IllegalArgumentException("File argument is required for kodedocs ${matchResult.value} in file ${input.path}")
@@ -30,43 +28,7 @@ class PreProcessor {
 
             "```$language\n${processKodeDocs(codeContent, include, exclude, codeFile.path)}\n```"
         }
-        return ProcessedResult(processedContent, metadata)
-    }
-
-    private fun extractFrontmatter(content: String, path: String): Pair<Map<String, Any>, String> {
-        if (!content.startsWith("---")) throw IllegalArgumentException("The File at $path does not start with \"---\"")
-        
-        val endOfFrontmatter = content.indexOf("---", 3)
-        if (endOfFrontmatter == -1) throw IllegalArgumentException("The File at $path does not have an enclosing \"---\"")
-        
-        val frontmatterText = content.substring(3, endOfFrontmatter).trim()
-        val remainingContent = content.substring(endOfFrontmatter + 3).trim()
-        
-        val metadata = mutableMapOf<String, Any>()
-        var currentList: MutableList<String>? = null
-        
-        frontmatterText.lines().forEach { line ->
-            val trimmed = line.trim()
-            if (trimmed.isEmpty()) return@forEach
-            
-            if (trimmed.startsWith("- ")) {
-                currentList?.add(trimmed.removePrefix("- ").trim())
-            } else if (trimmed.contains(":")) {
-                val parts = trimmed.split(":", limit = 2)
-                val key = parts[0].trim()
-                val value = parts[1].trim()
-                
-                if (value.isEmpty()) {
-                    currentList = mutableListOf()
-                    metadata[key] = currentList
-                } else {
-                    metadata[key] = value
-                    currentList = null
-                }
-            }
-        }
-        
-        return metadata to remainingContent
+        return processedContent
     }
 
     @Suppress("d")

@@ -1,5 +1,8 @@
+
 import com.vladsch.flexmark.ext.anchorlink.AnchorLinkExtension
 import com.vladsch.flexmark.ext.attributes.AttributesExtension
+import com.vladsch.flexmark.ext.yaml.front.matter.AbstractYamlFrontMatterVisitor
+import com.vladsch.flexmark.ext.yaml.front.matter.YamlFrontMatterExtension
 import com.vladsch.flexmark.html.HtmlRenderer
 import com.vladsch.flexmark.parser.Parser
 import com.vladsch.flexmark.util.data.MutableDataHolder
@@ -8,19 +11,27 @@ import kotlinx.serialization.Serializable
 
 class MarkDownParser {
     private val options: MutableDataHolder = MutableDataSet().apply {
-        set(Parser.EXTENSIONS, listOf(AttributesExtension.create(), AnchorLinkExtension.create()))
+        set(
+            Parser.EXTENSIONS,
+            listOf(
+                AttributesExtension.create(),
+                AnchorLinkExtension.create(),
+                YamlFrontMatterExtension.create(),
+            )
+        )
     }
     private val parser = Parser.builder(options).build()
     private val renderer = HtmlRenderer.builder(options).build()
 
-    data class ParsedResult(val html: String, val headings: List<Heading>)
+    data class ParsedResult(val html: String, val headings: List<Heading>, val metadata: Map<String, List<String>>)
     @Serializable
     data class Heading(val level: Int, val text: String, val id: String)
 
     fun parse(markdown: String): ParsedResult {
         val document = parser.parse(markdown)
+        val frontMatterVisitor = AbstractYamlFrontMatterVisitor().apply { visit(document) }
         val html = renderer.render(document)
-        
+
         val headings = mutableListOf<Heading>()
         val headingRegex = Regex("""<h([1-6])><a(?:\s+href="#([^"]*)"\s+id="\2")?>(.*?)</a></h\1>""", RegexOption.DOT_MATCHES_ALL)
         
@@ -31,6 +42,6 @@ class MarkDownParser {
             headings.add(Heading(level, text, id))
         }
         
-        return ParsedResult(html, headings)
+        return ParsedResult(html, headings, frontMatterVisitor.data)
     }
 }
