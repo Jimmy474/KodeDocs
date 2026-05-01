@@ -5,7 +5,10 @@ function setup() {
         manifest: null,
         version: "",
         language: "",
-        page: ""
+        page: "",
+        markerCleanup: null,
+        markerLockId: "",
+        markerLockTimer: null
     };
 
     function preferredTheme() {
@@ -25,15 +28,8 @@ function setup() {
         applyTheme(nextTheme);
     };
 
-    function manifestPath() {
-        const script = document.currentScript || document.querySelector("script[src$='script.js']");
-        const src = script ? script.getAttribute("src") || "" : "";
-        return src.includes("assets/script.js") ? "/manifest.json" : "../manifest.json";
-    }
-
     async function loadManifest() {
-        console.log("manifest loading from path : ", manifestPath());
-        const response = await fetch(manifestPath());
+        const response = await fetch("/manifest.json");
         if (!response.ok) throw new Error(`Unable to load manifest.json (${response.status})`);
         return response.json();
     }
@@ -75,10 +71,18 @@ function setup() {
         const path = `/${[state.version, state.language, pagePath].filter(Boolean).map(encodePathSegment).join("/")}`;
         const url = `${path}${window.location.hash || ""}`;
         if (push) {
-            window.history.pushState({...state}, "", url);
+            window.history.pushState(routeState(), "", url);
         } else {
-            window.history.replaceState({...state}, "", url);
+            window.history.replaceState(routeState(), "", url);
         }
+    }
+
+    function routeState() {
+        return {
+            version: state.version,
+            language: state.language,
+            page: state.page
+        };
     }
 
     function normalizePage(page) {
@@ -122,7 +126,7 @@ function setup() {
     }
 
     function renderNavItem(item) {
-        if (item.type === "group") {
+        if (item.type === "Group") {
             return `
                 <li class="nav-group">
                     <details open>
@@ -166,7 +170,6 @@ function setup() {
             if (isVersionedPath()) writeRoute(false);
             bindLinks();
             scrollToHash();
-            setupMarker();
         } catch (error) {
             console.error(error);
             renderErrorPage(page);
@@ -223,6 +226,8 @@ function setup() {
                 </section>
             `;
         }
+        bindTocLinks();
+        setupTocMarker();
     }
 
     function renderTOC(headings) {
@@ -236,13 +241,13 @@ function setup() {
             let level = heading.level;
 
             if (first) {
-                toc.push("<ul>");
+                toc.push("<ul class='toc-top-ul'>");
                 currentLevel = level;
                 first = false;
             }
 
             if (level > currentLevel) {
-                toc.push("<ul class='toc-sub'>");
+                toc.push("<ul>");
             } else if (level === currentLevel) {
                 toc.push("</li>");
             } else {
@@ -254,8 +259,8 @@ function setup() {
             }
 
             toc.push(`
-                <li ${heading.level !== 2 ? 'class="toc-level"' : ''}>
-                    <a href="#${escapeAttribute(heading.id)}">
+                <li class="toc-level">
+                    <a href="#${escapeAttribute(heading.id)}" title="${escapeHtml(heading.text)}">
                         ${escapeHtml(heading.text)}
                     </a>
             `);
@@ -317,7 +322,7 @@ function setup() {
         const railToc = document.querySelector("[data-rail-toc]");
         if (railToc) {
             railToc.innerHTML = aside?.innerHTML || "";
-            railToc.querySelector(".toc-marker").remove();
+            railToc.querySelector(".toc-marker")?.remove();
         }
     }
 
@@ -335,7 +340,7 @@ function setup() {
         state.version = next.version || state.version;
         state.language = next.language || state.language;
         state.page = normalizePage(next.page || state.page);
-        if (!next.keepHash) history.replaceState({...state}, "", window.location.pathname);
+        if (!next.keepHash) history.replaceState(routeState(), "", window.location.pathname);
         writeRoute(true);
         renderPage();
     }
@@ -457,7 +462,129 @@ function setup() {
         requestAnimationFrame(() => {
             const id = decodeURIComponent(window.location.hash.slice(1));
             document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+            requestAnimationFrame(updateTocMarker);
         });
+    }
+
+    function setupTocMarker() {
+        if (state.markerCleanup) state.markerCleanup();
+
+        const toc = document.querySelector(".right-sidebar .toc-section");
+        const marker = toc?.querySelector(".toc-marker");
+        const tocLinks = [...(toc?.querySelectorAll("a[href^='#']") || [])];
+        const headings = getContentHeadings();
+
+        if (!toc || !marker || !tocLinks.length || !headings.length) {
+            state.markerCleanup = null;
+            return;
+        }
+
+        const onScroll = rafThrottle(updateTocMarker);
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", onScroll);
+        window.addEventListener("hashchange", onScroll);
+        state.markerCleanup = () => {
+            window.removeEventListener("scroll", onScroll);
+            window.removeEventListener("resize", onScroll);
+            window.removeEventListener("hashchange", onScroll);
+        };
+
+        requestAnimationFrame(updateTocMarker);
+    }
+
+    function updateTocMarker() {
+        const toc = document.querySelector(".right-sidebar .toc-section");
+        const marker = toc?.querySelector(".toc-marker");
+        const links = [...(toc?.querySelectorAll("a[href^='#']") || [])];
+        const headings = getContentHeadings();
+        if (!toc || !marker || !links.length || !headings.length) return;
+
+        if (state.markerLockId) {
+            setActiveTocId(state.markerLockId);
+            return;
+        }
+
+        const offset = getStickyOffset() + 36;
+        let activeHeading = headings[0];
+
+        for (const heading of headings) {
+            if (heading.getBoundingClientRect().top <= offset) {
+                activeHeading = heading;
+            } else {
+                break;
+            }
+        }
+
+        const activeId = headingId(activeHeading);
+        setActiveTocId(activeId);
+    }
+
+    function setActiveTocId(activeId) {
+        const toc = document.querySelector(".right-sidebar .toc-section");
+        const marker = toc?.querySelector(".toc-marker");
+        const links = [...(toc?.querySelectorAll("a[href^='#']") || [])];
+        if (!toc || !marker || !links.length || !activeId) return;
+
+        const activeLink = links.find((link) => decodeURIComponent(link.hash.slice(1)) === activeId) || links[0];
+        links.forEach((link) => link.classList.toggle("active", link === activeLink));
+
+        const tocRect = toc.getBoundingClientRect();
+        const linkRect = activeLink.getBoundingClientRect();
+        marker.style.transform = `translateY(${linkRect.top - tocRect.top}px)`;
+        marker.style.height = `${linkRect.height}px`;
+    }
+
+    function bindTocLinks() {
+        document.querySelectorAll(".right-sidebar .toc-section a[href^='#'], [data-rail-toc] a[href^='#']").forEach((link) => {
+            link.addEventListener("click", (event) => {
+                event.preventDefault();
+                const id = decodeURIComponent(link.hash.slice(1));
+                const target = document.getElementById(id);
+
+                lockTocMarker(id);
+                if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+                history.replaceState(routeState(), "", `${window.location.pathname}#${encodeURIComponent(id)}`);
+            });
+        });
+    }
+
+    function lockTocMarker(id) {
+        state.markerLockId = id;
+        setActiveTocId(id);
+
+        if (state.markerLockTimer) clearTimeout(state.markerLockTimer);
+        state.markerLockTimer = setTimeout(() => {
+            state.markerLockId = "";
+        }, 900);
+    }
+
+    function getStickyOffset() {
+        const header = document.querySelector(".site-header")?.offsetHeight || 0;
+        const rail = getComputedStyle(document.querySelector(".collapsed-rail") || document.body).display !== "none"
+            ? document.querySelector(".collapsed-rail")?.offsetHeight || 0
+            : 0;
+        return header + rail;
+    }
+
+    function getContentHeadings() {
+        return [...document.querySelectorAll(".vp-doc h2, .vp-doc h3, .vp-doc h4")]
+            .filter((heading) => headingId(heading));
+    }
+
+    function headingId(heading) {
+        return heading.id || heading.querySelector("[id]")?.id || "";
+    }
+
+    function rafThrottle(callback) {
+        let ticking = false;
+        return () => {
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => {
+                callback();
+                ticking = false;
+            });
+        };
     }
 
     function escapeHtml(value) {
@@ -488,7 +615,6 @@ function setup() {
         bindSwitchers();
 
         try {
-            console.log("manifest loading now...");
             state.manifest = await loadManifest();
             const route = readRoute();
             state.version = route.version;
@@ -508,48 +634,6 @@ function setup() {
         }
     });
 
-    function setupMarker(){
-        const headings = document.querySelectorAll("h2, h3, h4").entries().map(([i, h]) => {
-            return h.querySelector("a");
-        });
-        const links = document.querySelector(".toc-section").querySelectorAll("a");
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const id = entry.target.id;
-                    console.log("intersecting", id);
-
-                    links.forEach(link => {
-                        link.classList.toggle(
-                            "active",
-                            link.getAttribute("href") === "#" + id
-                        );
-                    });
-
-                    moveIndicator();
-                }
-            });
-        }, {
-            rootMargin: "-40% 0px -50% 0px",
-            threshold: 0
-        });
-
-        headings.forEach(h => observer.observe(h));
-    }
-
-    function moveIndicator() {
-        const active = document.querySelector("a.active");
-        const indicator = document.querySelector(".toc-marker");
-
-        if (!active || !indicator) return;
-
-        const top = active.offsetTop;
-        const height = active.offsetHeight;
-
-        indicator.style.transform = `translateY(${top}px)`;
-        indicator.style.height = `${height}px`;
-    }
 }
 
 setup();
-

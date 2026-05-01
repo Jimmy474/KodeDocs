@@ -9,42 +9,47 @@
 <body>
     <div class="main-container">
         <header class="site-header">
-            <button class="icon-button nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" data-panel-toggle="nav">
-                <span class="menu-icon"><span></span></span>
-            </button>
-
-            <a class="brand" href="/" aria-label="KodeDocs home">
-                <span class="brand-mark">K</span>
-                <span class="brand-text">KodeDocs</span>
-            </a>
-
-            <nav class="top-nav" aria-label="Primary navigation">
-                <a href="#" aria-current="page">Guide</a>
-                <a href="#">API</a>
-                <a href="#">Examples</a>
-                <a href="#">Changelog</a>
-            </nav>
-
-            <div class="controls">
-                <label class="select-shell version-select" aria-label="Version">
-                    <select id="versionSelect"></select>
-                </label>
-
-                <label class="select-shell lang-select" aria-label="Language">
-                    <select id="langSelect">
-                        <option value="en" selected>EN</option>
-                    </select>
-                </label>
-
-                <button class="icon-button" type="button" aria-label="Toggle theme" onclick="toggleTheme()">
-                    <span class="theme-icon"></span>
-                </button>
-
+            <div class="brand">
+                <a class="brand-container" href="/" aria-label="KodeDocs home">
+                    <span class="brand-mark">K</span>
+                    <span class="brand-text">KodeDocs</span>
+                </a>
             </div>
 
-            <button class="icon-button controls-toggle" type="button" aria-label="Open controls" aria-expanded="false" data-controls-toggle>
-                <span class="menu-icon"><span></span></span>
-            </button>
+            <div class="header-content">
+                <button class="icon-button nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" data-panel-toggle="nav">
+                    <span class="menu-icon"><span></span></span>
+                </button>
+
+                <nav class="top-nav" aria-label="Primary navigation">
+                    <a href="#" aria-current="page">Guide</a>
+                    <a href="#">API</a>
+                    <a href="#">Examples</a>
+                    <a href="#">Changelog</a>
+                </nav>
+
+                <div class="controls">
+                    <label class="select-shell version-select" aria-label="Version">
+                        <select id="versionSelect"></select>
+                    </label>
+
+                    <label class="select-shell lang-select" aria-label="Language">
+                        <select id="langSelect">
+                            <option value="en" selected>EN</option>
+                        </select>
+                    </label>
+
+                    <button class="icon-button" type="button" aria-label="Toggle theme" onclick="toggleTheme()">
+                        <span class="theme-icon"></span>
+                    </button>
+
+                </div>
+
+                <button class="icon-button controls-toggle" type="button" aria-label="Open controls" aria-expanded="false" data-controls-toggle>
+                    <span class="menu-icon"><span></span></span>
+                </button>
+            </div>
+
         </header>
         <div class="collapsed-rail" aria-label="Page navigation">
             <button class="rail-button rail-nav-toggle" type="button" aria-expanded="false" data-panel-toggle="nav">Menu</button>

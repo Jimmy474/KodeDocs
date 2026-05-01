@@ -253,7 +253,12 @@ class Engine {
 
         inputFile.writeText(
             pages.joinToString(prefix = """{"pages":[""", postfix = "]}", separator = ",") { content ->
-                """{"id": ${content.manifestPageEntry.pageKey().jsonString()}, "html": ${content.html.jsonString()}}"""
+                """
+                    {
+                        "id": ${content.manifestPageEntry.pageKey().jsonString()},
+                        "html": ${content.html.jsonString()}
+                    }
+                """.trimIndent()
             }
         )
 

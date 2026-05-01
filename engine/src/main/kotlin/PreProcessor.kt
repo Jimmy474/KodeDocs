@@ -20,24 +20,32 @@ class PreProcessor {
             val file = args["file"] ?: throw IllegalArgumentException("File argument is required for kodedocs ${matchResult.value} in file ${input.path}")
             val include = args["include"]?.split(",") ?: emptyList()
             val exclude = args["exclude"]?.split(",") ?: emptyList()
+            val lines = args["lines"]?.split(",") ?: emptyList()
             val codeFile = File(file)
             if (!codeFile.exists()) throw IllegalArgumentException("File $file not found in ${input.name}")
             val codeContent = codeFile.readText()
 
             val language = detectLanguage(codeFile.extension)
 
-            "```$language\n${processKodeDocs(codeContent, include, exclude, codeFile.path)}\n```"
+            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```".also{
+                println("Processed\n\n$it\n----------------------------------------\n")
+            }
         }
         return processedContent
     }
 
     @Suppress("d")
-    fun processKodeDocs(input: String, include: List<String>, exclude: List<String>, filePath: String = "unknown"): String{
+    fun processKodeDocs(input: String, include: List<String>, exclude: List<String>, lineStrings: List<String>, filePath: String = "unknown"): String{
         val output = StringBuilder()
         var skipping = 0
         var including = 0
         var isRegionMarker: Boolean
+        val lines = lineStrings.flatMap {
+            val range = it.split("-").map { it.trim().toInt() }
+            (range[0]..(range.getOrNull(1) ?: range[0])).toList()
+        }.toSet()
 
+        var finalLineNumber = 0
         input.lines().forEachIndexed { index, line ->
             val lineNumber = index + 1
             isRegionMarker = false
@@ -71,7 +79,9 @@ class PreProcessor {
             }
 
             if(!isRegionMarker && skipping == 0 && ((include.isNotEmpty() && including > 0) || (include.isEmpty() && including == 0))){
-                output.append(line).append("\n")
+                output.append(line.let{
+                    if(lines.contains(++finalLineNumber)) "$it // [!code highlight]" else it
+                }).append("\n")
             }
         }
         return output.toString().trimIndent()

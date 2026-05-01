@@ -1,6 +1,12 @@
 
+import admonition_extension.AdmonitionExtension
 import com.vladsch.flexmark.ext.anchorlink.AnchorLinkExtension
 import com.vladsch.flexmark.ext.attributes.AttributesExtension
+import com.vladsch.flexmark.ext.emoji.EmojiExtension
+import com.vladsch.flexmark.ext.tables.TablesExtension
+import com.vladsch.flexmark.ext.toc.SimTocExtension
+import com.vladsch.flexmark.ext.toc.TocExtension
+import com.vladsch.flexmark.ext.typographic.TypographicExtension
 import com.vladsch.flexmark.ext.yaml.front.matter.AbstractYamlFrontMatterVisitor
 import com.vladsch.flexmark.ext.yaml.front.matter.YamlFrontMatterExtension
 import com.vladsch.flexmark.html.HtmlRenderer
@@ -17,6 +23,13 @@ class MarkDownParser {
                 AttributesExtension.create(),
                 AnchorLinkExtension.create(),
                 YamlFrontMatterExtension.create(),
+                AdmonitionExtension.create(),
+                TablesExtension.create(),
+                TypographicExtension.create(),
+                EmojiExtension.create(),
+                TocExtension.create(),
+                SimTocExtension.create(),
+                
             )
         )
     }
