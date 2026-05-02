@@ -35,30 +35,32 @@
     --sidebar-width: 284px;
     --content-width: 820px;
     --toc-width: 284px;
+    --gutter-indent: 1;
+    --gutter-padding: 20px;
     --side-space: max(0px, calc((100vw - var(--content-width)) / 2));
     --font-base: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-    --tip-bg: #c2e1ff;
-    --info-bg: #b6c8d7;
-    --warning-bg: #fff0c2;
-    --danger-bg: #ffb4b4;
-    --success-bg: #b4ffb4;
-    --custom-bg: #f6f6f7;
+    --tip-bg: #e9eaff;
+    --info-bg: #eff0f3;
+    --warning-bg: #fcf4dc;
+    --danger-bg: #fde4e8;
+    --success-bg: #e6ffe6;
+    --custom-bg: #eff0f3;
 
-    --tip-code-bg: #c2e1ff;
-    --info-code-bg: #b6c8d7;
-    --warning-code-bg: #fff0c2;
-    --danger-code-bg: #ffb4b4;
-    --success-code-bg: #b4ffb4;
-    --custom-code-bg: #f6f6f7;
+    --tip-code-bg: #d6d8ff;
+    --info-code-bg: #e1e3e9;
+    --warning-code-bg: #f9ebbe;
+    --danger-code-bg: #fbcdd4;
+    --success-code-bg: #caffca;
+    --custom-code-bg: #e1e3e9;
 
-    --tip-code-text: #2f3951;
-    --info-code-text: #2f3951;
-    --warning-code-text: #2f3951;
-    --danger-code-text: #2f3951;
-    --success-code-text: #2f3951;
-    --custom-code-text: #2f3951;
+    --tip-code-text: #5368cd;
+    --info-code-text: #556ac5;
+    --warning-code-text: #ce8c30;
+    --danger-code-text: #c72767;
+    --success-code-text: #32bd32;
+    --custom-code-text: #559cd9;
 }
 
 :root.dark {
@@ -68,7 +70,7 @@
     --surface: #202127;
     --text: #dfdfe5;
     --text-soft: #e4e4e9cc;
-    --text-muted: #a7a7ad;
+    --text-muted: #88888d;
     --border: #3c3f44;
     --border-soft: #2e3035;
     --brand: #8aa4ff;
@@ -82,22 +84,22 @@
     --info-bg: #272a2f;
     --warning-bg: #3d341b;
     --danger-bg: #3e2129;
-    --success-bg: #003400;
-    --custom-bg: #3b3b3b;
+    --success-bg: #1a361a;
+    --custom-bg: #272a2f;
 
     --tip-code-bg: #213551;
     --info-code-bg: #31363c;
     --warning-code-bg: #594918;
     --danger-code-bg: #5b2631;
     --success-code-bg: #004f00;
-    --custom-code-bg: #606060;
+    --custom-code-bg: #31363c;
 
     --tip-code-text: #3d90e4;
     --info-code-text: #4590e4;
     --warning-code-text: #efb43a;
     --danger-code-text: #f3504b;
     --success-code-text: #43c500;
-    --custom-code-text: #b7b7b7;
+    --custom-code-text: #4590e4;
 }
 
 * {
@@ -555,11 +557,50 @@ select:focus-visible {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
     border: 1px solid var(--border-soft);
     border-radius: 8px;
     padding: 16px;
     margin: 24px 0;
+}
+
+.admonition-content {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: opacity 200ms ease, grid-template-rows 200ms ease;
+    will-change: grid-template-rows;
+}
+
+.admonition-content > * {
+    overflow: hidden;
+}
+
+.admonition.collapsable.closed .admonition-content {
+    grid-template-rows: 0fr;
+    opacity: 0;
+}
+
+.admonition.collapsable.open .admonition-content {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.admonition.collapsable .admonition-title {
+    padding-left: 12px;
+}
+
+.admonition.collapsable .admonition-title::before {
+    position: relative;
+    content: '';
+    width: 12px;
+    height: 8px;
+    right: 12px;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    transition: transform 160ms ease;
+}
+
+.admonition.collapsable.closed .admonition-title::before {
+    transform: rotate(-90deg);
 }
 
 .admonition-title {
@@ -569,6 +610,7 @@ select:focus-visible {
     color: var(--text);
     font-size: 14px;
     font-weight: 750;
+    text-transform: uppercase;
 }
 
 .admonition.tip{
@@ -595,32 +637,32 @@ select:focus-visible {
     background: var(--custom-bg);
 }
 
-.admonition.info code{
+.admonition.info :not(pre) > code{
     background: var(--info-code-bg);
     color: var(--info-code-text);
 }
 
-.admonition.tip code{
+.admonition.tip :not(pre) > code{
     background: var(--tip-code-bg);
     color: var(--tip-code-text);
 }
 
-.admonition.warning code{
+.admonition.warning :not(pre) > code{
     background: var(--warning-code-bg);
     color: var(--warning-code-text);
 }
 
-.admonition.danger code{
+.admonition.danger :not(pre) > code{
     background: var(--danger-code-bg);
     color: var(--danger-code-text);
 }
 
-.admonition.success code{
+.admonition.success :not(pre) > code{
     background: var(--success-code-bg);
     color: var(--success-code-text);
 }
 
-.admonition.custom code{
+.admonition.custom :not(pre) > code{
     background: var(--custom-code-bg);
     color: var(--custom-code-text);
 }
@@ -747,11 +789,13 @@ code {
     font-size: 0.9em;
 }
 
-pre {
+
+pre, .line-numbers-mode {
+    position: relative;
     overflow-x: auto;
     border: 1px solid var(--border-soft);
     border-radius: 8px;
-    padding: 18px;
+    padding: var(--gutter-padding) var(--gutter-padding) var(--gutter-padding) calc(var(--gutter-indent) * var(--gutter-padding));
     background: var(--code-bg);
 }
 
@@ -826,10 +870,12 @@ pre.has-focused:not(:hover) .line:not(.focused){
 }
 
 code .diff, code .line.highlighted{
-    padding-left: 18px;
-    width: calc(100% + 36px);
-    margin: 0 -18px;
+    --gutter-offset: calc(var(--gutter-indent) * var(--gutter-padding));
+    position: relative;
     display: inline-block;
+    padding-left: var(--gutter-offset);
+    width: calc(100% + var(--gutter-offset) + var(--gutter-padding));
+    margin: 0 calc(-1 * var(--gutter-offset));
 }
 
 code .line.highlighted{
@@ -876,9 +922,9 @@ pre.shiki .space::before {
 .diff.add::before, .diff.remove::before{
     content: "+";
     position: absolute;
-    left: 36px;
+    left: 0;
     height: inherit;
-    width: 18px;
+    width: var(--gutter-padding);
     color: rgb(0 255 0 / 0.5);
     text-align: center;
     font-weight: 700;
@@ -888,6 +934,76 @@ pre.shiki .space::before {
 .diff.remove::before{
     content: "-";
     color: rgb(255 0 0 / 0.5);
+}
+
+pre.shiki .indent {
+    display: inline-block;
+    position: relative;
+    left: var(--indent-offset);
+}
+
+pre.shiki .indent:empty {
+    height: 1lh;
+    vertical-align: bottom;
+}
+
+pre.shiki .indent::before {
+    content: '';
+    position: absolute;
+    opacity: 0.15;
+    width: 1px;
+    height: 100%;
+    background-color: currentColor;
+}
+
+.line-numbers-mode{
+    display: flex;
+    margin: 1em 0;
+    padding: 0;
+}
+
+.line-numbers-mode pre{
+    flex-grow: 1;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+}
+
+.line-numbers-mode .code-copy-button, .line-numbers-mode .code-language-tag{
+    display: flex;
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    color: var(--text-muted);
+    z-index: 1;
+    transition: opacity 160ms ease;
+    font-size: 12px;
+}
+
+.line-numbers-mode .code-copy-button{
+    top: 12px;
+    right: 12px;
+}
+
+.line-numbers-mode:hover .code-copy-button, .line-numbers-mode:not(:hover) .code-language-tag{
+    opacity: 1;
+}
+
+.line-numbers-mode:hover .code-language-tag, .line-numbers-mode:not(:hover) .code-copy-button{
+    opacity: 0;
+}
+
+.line-numbers-mode .code-line-numbers{
+    display: flex;
+    flex-direction: column;
+    width: calc((1ch * var(--ln-chars)) + 12px);
+    padding: var(--gutter-padding) 6px 0 6px;
+    color: var(--text-muted) !important;
+    background: var(--code-bg);
+    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    text-align: center;
+    border-right: 1px solid var(--border);
 }
 
 @keyframes fade-up {

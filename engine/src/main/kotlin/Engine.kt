@@ -268,6 +268,7 @@ class Engine {
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().readText()
+            println(output)
             val exitCode = process.waitFor()
             if (exitCode != 0) {
                 throw IllegalStateException(

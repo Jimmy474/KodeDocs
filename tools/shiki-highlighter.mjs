@@ -12,6 +12,7 @@ import {
     transformerMetaWordHighlight,
     transformerRemoveComments,
 } from "@shikijs/transformers";
+import * as cheerio from 'cheerio';
 
 const [, , inputPath, outputPath] = process.argv;
 
@@ -56,25 +57,44 @@ function highlightHtml(html, highlighter) {
         const lang = normalizeLanguage(block.language);
         if (!lang || !bundledLanguages[lang]) return blockHtml;
 
-        return highlighter.codeToHtml(decodeHtml(block.code), {
+        const code = highlighter.codeToHtml(decodeHtml(block.code.trim()), {
             lang,
             themes: {
                 light: "github-light",
                 dark: "github-dark"
             },
             defaultColor: false,
+            includeExplanation: true,
             transformers: [
                 transformerNotationDiff(),
                 transformerNotationHighlight(),
                 transformerNotationWordHighlight(),
                 transformerNotationFocus(),
                 transformerNotationErrorLevel(),
-                transformerRenderWhitespace(),
-                transformerRenderIndentGuides(), // doesnt work yet
-                transformerMetaHighlight(), // doesnt work yet
-                transformerMetaWordHighlight(),
+                // transformerRenderWhitespace(),
+                transformerRenderIndentGuides(),
+                // transformerMetaHighlight(), // doesnt work yet
+                // transformerMetaWordHighlight(),
             ]
         });
+
+        if(block.lineNumbers === 0) return code;
+
+        const $ = cheerio.load(code);
+        const lines = $(".line");
+        const start = block.lineNumbers > 0 ? block.lineNumbers : 1;
+        const lineNumberChars = ((lines.length + start - 1).toString().length) + 1;
+        $('pre').wrap('<div class="line-numbers-mode"></div>');
+        $(".line-numbers-mode").prepend(`
+            <span class="code-language-tag">${lang}</span>
+            <div class="code-copy-button"><button class="copy-button" title="Copy to clipboard">Copy</button></div>
+            <div class="code-line-numbers" style="--ln-chars:${lineNumberChars}"></div>
+        `.trim())
+
+        lines.each((i,l) => {
+            $(".code-line-numbers").append(`<span class="line-number">${i + start}</span>`);
+        });
+        return $.html();
     });
 }
 
@@ -83,12 +103,16 @@ function* codeBlocks(html) {
     let match;
 
     while ((match = regex.exec(html)) !== null) {
+        const preAttributes = match[1] || "";
+        const lineNumbers = preAttributes.match(/\blineNumbers="(\d+)"/);
+
         const codeAttributes = match[2] || "";
         const languageMatch = codeAttributes.match(/\blanguage-([a-zA-Z0-9_+#.-]+)/);
 
         yield {
             language: languageMatch?.[1] || "text",
-            code: match[3] || ""
+            code: match[3] || "",
+            lineNumbers: lineNumbers ? parseInt(lineNumbers[1], 10) : 0,
         };
     }
 }

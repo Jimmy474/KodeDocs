@@ -2,44 +2,28 @@
 title: Index
 description: test description
 ---
-
+ 
 # Welcome to KodeDocs
-
-This is the latest version in English.
-
 
 ```kodedocs
 file: ../app/src/main/resources/test.java
-lines: 1-2
+lines: 1
+exclude: temp
+lineNumbers: 1
 ```
 
-::: info
+```kodedocs
+file: ../app/src/main/resources/test.java
+include: main
+lineNumbers: 6
+```
 
-this is an info admonition `code`
+```kodedocs
+file: ../app/src/main/resources/test.java
+lines: 3
+```
 
-:::
-
-::: warning
-this is a warning admonition `code`
-
-:::
-
-:::tip
-this is a tip admonition `code`
-
-:::
-
-::: danger
-this is a danger admonition `code`
-
-:::
-
-::: success
-this is a success admonition `code`
-
-:::
-
-:::custom|customTitle
-this is a custom admonition `code`
-
-:::
+```kodedocs
+file: ../app/src/main/resources/test.java
+exclude: temp
+```

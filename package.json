@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@shikijs/transformers": "^4.0.2",
+    "cheerio": "^1.2.0",
     "shiki": "^3.12.2"
   }
 }

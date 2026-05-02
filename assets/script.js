@@ -169,6 +169,7 @@ function setup() {
             document.title = `${content.title} | KodeDocs`;
             if (isVersionedPath()) writeRoute(false);
             bindLinks();
+            bindAdmonitionToggles();
             scrollToHash();
         } catch (error) {
             console.error(error);
@@ -359,6 +360,15 @@ function setup() {
                 event.preventDefault();
                 changeRoute({page: anchor.dataset.docPage});
             };
+        });
+    }
+
+    function bindAdmonitionToggles() {
+        document.querySelectorAll(".admonition.collapsable").forEach((admonition) => {
+            admonition.addEventListener("click", (event) => {
+                admonition.classList.toggle("open");
+                admonition.classList.toggle("closed");
+            })
         });
     }
 

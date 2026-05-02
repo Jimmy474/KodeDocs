@@ -13,6 +13,7 @@ repositories {
 dependencies {
     testImplementation(kotlin("test"))
     implementation(libs.flexmark)
+    implementation(libs.jsoup)
     implementation(libs.bundles.kotlinxEcosystem)
 }
 

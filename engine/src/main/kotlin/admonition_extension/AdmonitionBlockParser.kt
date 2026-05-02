@@ -5,9 +5,9 @@ import com.vladsch.flexmark.parser.core.ParagraphParser
 import com.vladsch.flexmark.util.ast.Block
 import com.vladsch.flexmark.util.data.DataHolder
 
-class AdmonitionBlockParser(type: String, customTitle: String?): AbstractBlockParser() {
+class AdmonitionBlockParser(type: String, title: String, isCollapsable: Boolean?): AbstractBlockParser() {
 
-    private val block = AdmonitionBlock(type,customTitle)
+    private val block = AdmonitionBlock(type,title,isCollapsable)
 
     override fun getBlock(): Block = block
 
@@ -38,15 +38,19 @@ class AdmonitionBlockParser(type: String, customTitle: String?): AbstractBlockPa
                     return if (matched.blockParser is AdmonitionBlockParser || !line.startsWith(":::")) {
                         BlockStart.none()
                     } else {
-                        Regex("""^:::\s*(info|warning|tip|danger|success|custom)(?:\s*\|\s*(.+))?$""").matchEntire(line)?.let{
-                            val type = it.groupValues[1]
-                            val rawTitle = it.groupValues.getOrNull(2)
-                            val customTitle = rawTitle
+                        Regex("""^:::\s*(info|warning|tip|danger|success|custom)(?:\s+\|\s+(\w+))?(?:\s+\[(open|close)])?$""").matchEntire(line)?.let{ result ->
+                            val type = result.groupValues[1]
+                            val rawTitle = result.groupValues.getOrNull(2)
+                            val title = rawTitle
                                 ?.takeIf { it.isNotBlank() }
                                 ?.substringAfter("|")
                                 ?.trim()
+                                ?: type
+                            val isCollapsable = result.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }?.let{
+                                it == "open"
+                            }
 
-                            BlockStart.of(AdmonitionBlockParser(type,customTitle)).atIndex(state.line.length)
+                            BlockStart.of(AdmonitionBlockParser(type,title,isCollapsable)).atIndex(state.line.length)
                         } ?: BlockStart.none()
                     }
 

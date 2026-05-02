@@ -10,6 +10,7 @@ kotlinxCoroutines = "1.10.2"
 ktor = "3.4.3"
 directoryWatcher = "0.19.1"
 flexmark = "0.64.8"
+jsoup = "1.22.2"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -22,6 +23,7 @@ ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.re
 #ktor-server-static-content = { module = "io.ktor:ktor-server-static-content", version.ref = "ktor" }
 directory-watcher = { module = "io.methvin:directory-watcher", version.ref = "directoryWatcher" }
 flexmark = { module = "com.vladsch.flexmark:flexmark-all", version.ref = "flexmark" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 
 # Libraries can be bundled together for easier import
 [bundles]

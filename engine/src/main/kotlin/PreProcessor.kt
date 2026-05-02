@@ -21,14 +21,16 @@ class PreProcessor {
             val include = args["include"]?.split(",") ?: emptyList()
             val exclude = args["exclude"]?.split(",") ?: emptyList()
             val lines = args["lines"]?.split(",") ?: emptyList()
+            val lineNumbers = args["lineNumbers"]?.toIntOrNull() ?: 0
+
             val codeFile = File(file)
             if (!codeFile.exists()) throw IllegalArgumentException("File $file not found in ${input.name}")
             val codeContent = codeFile.readText()
 
             val language = detectLanguage(codeFile.extension)
 
-            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```".also{
-                println("Processed\n\n$it\n----------------------------------------\n")
+            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```\n{lineNumbers=\"$lineNumbers\"}\n".also {
+//                println("Processed\n\n$it\n----------------------------------------\n")
             }
         }
         return processedContent
