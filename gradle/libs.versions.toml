@@ -1,9 +1,5 @@
-# Version catalog is a central place for you to declare and version dependencies
-# https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
-# https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
-
 [versions]
-kotlin = "2.3.21"
+kotlin = "2.4.0"
 kotlinxDatetime = "0.7.1"
 kotlinxSerializationJSON = "1.11.0"
 kotlinxCoroutines = "1.10.2"
@@ -11,6 +7,9 @@ ktor = "3.4.3"
 directoryWatcher = "0.19.1"
 flexmark = "0.64.8"
 jsoup = "1.22.2"
+jna = "5.19.1"
+treesitterlanguagepack = "1.10.7"
+logback = "1.5.34"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -20,15 +19,18 @@ kotlinxCoroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", 
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
 ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktor" }
-#ktor-server-static-content = { module = "io.ktor:ktor-server-static-content", version.ref = "ktor" }
+ktor-server-call-logging = { module = "io.ktor:ktor-server-call-logging", version.ref = "ktor" }
 directory-watcher = { module = "io.methvin:directory-watcher", version.ref = "directoryWatcher" }
 flexmark = { module = "com.vladsch.flexmark:flexmark-all", version.ref = "flexmark" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jnaPlatform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+kruezberg-treesitter-language-pack = { module = "dev.kreuzberg.treesitterlanguagepack:tree-sitter-language-pack", version.ref = "treesitterlanguagepack" }
+logback = { module = "ch.qos.logback:logback-classic", version.ref="logback" }
 
-# Libraries can be bundled together for easier import
 [bundles]
 kotlinxEcosystem = ["kotlinxDatetime", "kotlinxSerialization", "kotlinxCoroutines"]
-ktorEcosystem = ["ktor-server-core", "ktor-server-netty", "ktor-server-websockets"]
+ktorEcosystem = ["ktor-server-core", "ktor-server-netty", "ktor-server-websockets", "ktor-server-call-logging"]
 
 [plugins]
 kotlinPluginSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

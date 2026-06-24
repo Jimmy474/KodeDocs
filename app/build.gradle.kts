@@ -4,7 +4,6 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":utils"))
     implementation(project(":engine"))
 
     implementation(libs.directory.watcher)
@@ -14,4 +13,8 @@ dependencies {
 
 application {
     mainClass = "com.jimmy.app.MainKt"
+}
+
+tasks.withType<JavaExec> {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }

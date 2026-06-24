@@ -16,23 +16,21 @@ import com.vladsch.flexmark.util.data.MutableDataSet
 import kotlinx.serialization.Serializable
 
 class MarkDownParser {
-    private val options: MutableDataHolder = MutableDataSet().apply {
-        set(
-            Parser.EXTENSIONS,
-            listOf(
-                AttributesExtension.create(),
-                AnchorLinkExtension.create(),
-                YamlFrontMatterExtension.create(),
-                AdmonitionExtension.create(),
-                TablesExtension.create(),
-                TypographicExtension.create(),
-                EmojiExtension.create(),
-                TocExtension.create(),
-                SimTocExtension.create(),
-                
-            )
+    private val options: MutableDataHolder = MutableDataSet().set(
+        Parser.EXTENSIONS,
+        listOf(
+            AttributesExtension.create(),
+            AnchorLinkExtension.create(),
+            YamlFrontMatterExtension.create(),
+            AdmonitionExtension.create(),
+            TablesExtension.create(),
+            TypographicExtension.create(),
+            EmojiExtension.create(),
+            TocExtension.create(),
+            SimTocExtension.create(),
         )
-    }
+    )
+
     private val parser = Parser.builder(options).build()
     private val renderer = HtmlRenderer.builder(options).build()
 
@@ -46,7 +44,7 @@ class MarkDownParser {
         val html = renderer.render(document)
 
         val headings = mutableListOf<Heading>()
-        val headingRegex = Regex("""<h([1-6])><a(?:\s+href="#([^"]*)"\s+id="\2")?>(.*?)</a></h\1>""", RegexOption.DOT_MATCHES_ALL)
+        val headingRegex = Regex("""<h([1-6])(?:\s+id="([^"]*)")?>(.*?)<a\s+class="anchor-link"\s+href="#\2">""", RegexOption.DOT_MATCHES_ALL)
         
         headingRegex.findAll(html).forEach { match ->
             val level = match.groupValues[1].toInt()

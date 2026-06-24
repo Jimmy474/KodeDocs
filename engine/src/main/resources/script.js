@@ -107,6 +107,42 @@ function setup() {
         const manifest = state.manifest;
         setSelectOptions(document.querySelector("#versionSelect"), manifest.versions || [], state.version);
         setSelectOptions(document.querySelector("#langSelect"), manifest.languages || [], state.language);
+        renderSiteConfig();
+    }
+
+    function renderSiteConfig() {
+        const manifest = state.manifest;
+        if (!manifest || !manifest.site) return;
+
+        const site = manifest.site;
+        
+        // Branding
+        if (site.brand) {
+            const brandLogo = document.querySelector(".brand-logo");
+            const brandMark = document.querySelector(".brand-mark");
+            const brandText = document.querySelector(".brand-text");
+            
+            if (brandLogo) {
+                if (site.brand.logoImage) {
+                    brandLogo.innerHTML = `<img src="${escapeAttribute(site.brand.logoImage)}" alt="${escapeAttribute(site.brand.name || "")}" class="logo-image">`;
+                    if (brandMark) brandMark.textContent = "";
+                } else {
+                    brandLogo.innerHTML = "";
+                    if (brandMark) brandMark.textContent = site.brand.logoText || (site.brand.name ? site.brand.name.charAt(0) : "");
+                }
+            }
+            if (brandText) brandText.textContent = site.brand.name || "";
+        }
+
+        // Navigation
+        const topNav = document.querySelector(".top-nav");
+        if (topNav && site.nav) {
+            topNav.innerHTML = site.nav.map(item => {
+                return `<a href="${escapeAttribute(item.link)}">${escapeHtml(item.text)}</a>`;
+            }).join("");
+            bindLinks();
+            updateTopNavActive();
+        }
     }
 
     function renderSidebar() {
@@ -161,9 +197,7 @@ function setup() {
         }
 
         try {
-            const response = await fetch(`/${page.contentPath}`);
-            if (!response.ok) throw new Error(`Unable to load ${page.contentPath}`);
-            const content = await response.json();
+            const content = await loadPageContent(page);
             renderContent(content);
             renderRightSidebar(content);
             document.title = `${content.title} | KodeDocs`;
@@ -172,26 +206,33 @@ function setup() {
             bindAdmonitionToggles();
             scrollToHash();
         } catch (error) {
-            console.error(error);
             renderErrorPage(page);
         }
+    }
+
+    async function loadPageContent(page) {
+        const response = await fetch(`/${page.contentPath}`);
+        if (!response.ok) throw new Error(`Unable to load ${page.contentPath}`);
+        const html = await response.text();
+        const documentFragment = new DOMParser().parseFromString(html, "text/html");
+        const metaNode = documentFragment.querySelector("[data-page-meta]");
+        const meta = metaNode ? JSON.parse(metaNode.textContent || "{}") : {};
+        metaNode?.remove();
+
+        return {
+            title: meta.title || page.title,
+            description: meta.description || page.description || "",
+            metadata: meta.metadata || {},
+            headings: meta.headings || [],
+            html: documentFragment.body.innerHTML
+        };
     }
 
     function renderContent(content) {
         const main = document.querySelector("main");
         if (!main) return;
-        main.classList.add("docs-content", "vp-doc");
-        const authors = Array.isArray(content.metadata?.authors) ? content.metadata.authors : [];
-        main.innerHTML = `
-            ${authors.length ? `
-                <section class="main-authors" aria-label="Page authors">
-                    <div class="authors">${authors.map(renderAuthor).join("")}</div>
-                </section>
-            ` : ""}
-            <h1>${escapeHtml(content.title)}</h1>
-            ${content.description ? `<p class="lead">${escapeHtml(content.description)}</p>` : ""}
-            ${content.html}
-        `;
+        main.classList.add("docs-content", "kd-doc");
+        main.innerHTML = content.html;
     }
 
     function renderRightSidebar(content) {
@@ -333,7 +374,7 @@ function setup() {
         main.innerHTML = `
             <p class="doc-kicker">Load error</p>
             <h1>Could not load this page</h1>
-            <p class="lead">The manifest points to ${escapeHtml(page.contentPath)}, but the content file could not be read.</p>
+            <p class="lead">The manifest points to ${escapeHtml(page.contentPath)}, but the page HTML could not be read.</p>
         `;
     }
 
@@ -355,10 +396,28 @@ function setup() {
     }
 
     function bindLinks() {
-        document.querySelectorAll("[data-doc-page]").forEach((anchor) => {
+        document.querySelectorAll("[data-doc-page], .top-nav a").forEach((anchor) => {
             anchor.onclick = (event) => {
-                event.preventDefault();
-                changeRoute({page: anchor.dataset.docPage});
+                const href = anchor.getAttribute("href");
+                if (href && (href.startsWith("/") || href.startsWith("http"))) {
+                    // Check if it matches a doc page
+                    const manifest = state.manifest;
+                    const segments = href.replace(/^\/+|\/+$/g, "").split("/");
+                    if (segments.length >= 3 && manifest.versions?.includes(segments[0])) {
+                        event.preventDefault();
+                        changeRoute({
+                            version: segments[0],
+                            language: segments[1],
+                            page: segments.slice(2).join("/")
+                        });
+                        return;
+                    }
+                }
+                
+                if (anchor.dataset.docPage) {
+                    event.preventDefault();
+                    changeRoute({page: anchor.dataset.docPage});
+                }
             };
         });
     }
@@ -458,6 +517,18 @@ function setup() {
         document.querySelector("[data-controls-toggle]")?.setAttribute("aria-expanded", "false");
     }
 
+    function updateTopNavActive() {
+        const currentPath = window.location.pathname;
+        document.querySelectorAll(".top-nav a").forEach((link) => {
+            const href = link.getAttribute("href");
+            if (href && href !== "#") {
+                const isActive = currentPath.startsWith(href);
+                link.classList.toggle("active", isActive);
+                link.setAttribute("aria-current", isActive ? "page" : "false");
+            }
+        });
+    }
+
     function routeFor(version, language, page) {
         const pagePath = normalizePage(page).replace(/\.md$/, "");
         return `/${[version, language, pagePath].filter(Boolean).map(encodePathSegment).join("/")}`;
@@ -480,11 +551,10 @@ function setup() {
         if (state.markerCleanup) state.markerCleanup();
 
         const toc = document.querySelector(".right-sidebar .toc-section");
-        const marker = toc?.querySelector(".toc-marker");
         const tocLinks = [...(toc?.querySelectorAll("a[href^='#']") || [])];
         const headings = getContentHeadings();
 
-        if (!toc || !marker || !tocLinks.length || !headings.length) {
+        if (!toc || !tocLinks.length || !headings.length) {
             state.markerCleanup = null;
             return;
         }
@@ -504,10 +574,9 @@ function setup() {
 
     function updateTocMarker() {
         const toc = document.querySelector(".right-sidebar .toc-section");
-        const marker = toc?.querySelector(".toc-marker");
         const links = [...(toc?.querySelectorAll("a[href^='#']") || [])];
         const headings = getContentHeadings();
-        if (!toc || !marker || !links.length || !headings.length) return;
+        if (!toc || !links.length || !headings.length) return;
 
         if (state.markerLockId) {
             setActiveTocId(state.markerLockId);
@@ -531,17 +600,11 @@ function setup() {
 
     function setActiveTocId(activeId) {
         const toc = document.querySelector(".right-sidebar .toc-section");
-        const marker = toc?.querySelector(".toc-marker");
         const links = [...(toc?.querySelectorAll("a[href^='#']") || [])];
-        if (!toc || !marker || !links.length || !activeId) return;
+        if (!toc || !links.length || !activeId) return;
 
         const activeLink = links.find((link) => decodeURIComponent(link.hash.slice(1)) === activeId) || links[0];
         links.forEach((link) => link.classList.toggle("active", link === activeLink));
-
-        const tocRect = toc.getBoundingClientRect();
-        const linkRect = activeLink.getBoundingClientRect();
-        marker.style.transform = `translateY(${linkRect.top - tocRect.top}px)`;
-        marker.style.height = `${linkRect.height}px`;
     }
 
     function bindTocLinks() {
@@ -577,7 +640,7 @@ function setup() {
     }
 
     function getContentHeadings() {
-        return [...document.querySelectorAll(".vp-doc h2, .vp-doc h3, .vp-doc h4")]
+        return [...document.querySelectorAll(".kd-doc h2, .kd-doc h3, .kd-doc h4")]
             .filter((heading) => headingId(heading));
     }
 
@@ -632,7 +695,6 @@ function setup() {
             state.page = route.page;
             await renderPage();
         } catch (error) {
-            console.error(error);
             const main = document.querySelector("main");
             if (main) {
                 main.innerHTML = `

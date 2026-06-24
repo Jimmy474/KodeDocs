@@ -11,8 +11,9 @@
         <header class="site-header">
             <div class="brand">
                 <a class="brand-container" href="/" aria-label="KodeDocs home">
-                    <span class="brand-mark">K</span>
-                    <span class="brand-text">KodeDocs</span>
+                    <span class="brand-logo"></span>
+                    <span class="brand-mark"></span>
+                    <span class="brand-text"></span>
                 </a>
             </div>
 
@@ -22,10 +23,7 @@
                 </button>
 
                 <nav class="top-nav" aria-label="Primary navigation">
-                    <a href="#" aria-current="page">Guide</a>
-                    <a href="#">API</a>
-                    <a href="#">Examples</a>
-                    <a href="#">Changelog</a>
+                    <!-- Loaded dynamically -->
                 </nav>
 
                 <div class="controls">
@@ -60,11 +58,11 @@
         </div>
         <nav class="sidebar" data-panel="nav" aria-label="Documentation navigation">
             <div class="sidebar-inner">
-                <p class="empty-panel">Loading navigation...</p>
+                <!-- Loaded dynamically -->
             </div>
         </nav>
         <div class="docs-layout">
-            <main class="docs-content vp-doc">
+            <main class="docs-content kd-doc">
                 <p class="doc-kicker">KodeDocs</p>
                 <h1>Loading documentation...</h1>
                 <p class="lead">The documentation shell is preparing the selected version, language, and page.</p>
@@ -72,7 +70,7 @@
 
             <aside class="right-sidebar" data-panel="toc" aria-label="On this page">
                 <div class="toc-inner">
-                    <p class="empty-panel">Loading page outline...</p>
+                    <!-- Loaded dynamically -->
                 </div>
             </aside>
         </div>
@@ -81,12 +79,28 @@
     <div class="mobile-backdrop" aria-hidden="true"></div>
     <script src="/assets/script.js"></script>
     <script>
-        if (location.protocol === "http:" || location.protocol === "https:") {
-            const socket = new WebSocket("ws://" + window.location.host + "/livereload");
-            socket.onmessage = function (event) {
-                if (event.data === "reload") window.location.reload();
-            };
-        }
+        (function() {
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const wsUrl = protocol + window.location.host + '/livereload';
+            let ws;
+            function connect() {
+                ws = new WebSocket(wsUrl);
+
+                ws.onmessage = function(event) {
+                    if (event.data === 'reload') {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('reloadTime', `${Date.now()}`);
+                        window.location.href = url.toString();
+                    }
+                };
+
+                ws.onclose = function() {
+                    setTimeout(connect, 2000);
+                };
+            }
+
+            connect();
+        })();
     </script>
 </body>
 </html>

@@ -2,48 +2,46 @@
 
 KodeDocs is a documentation generator that supports versioning, translation, and live preview.
 
-## Building the Project
+## 📦 Installation & Prerequisites
+This engine uses Project Panama and the native Tree-sitter C-library to achieve blazing-fast Markdown parsing. Because it talks directly to your hardware, you must install the Tree-sitter library on your operating system before running the site generator.
 
-To build the project, run the following command from the root directory:
+To Install Tree-sitter Choose your operating system below to install the native engine:
 
-```powershell
-.\gradlew.bat build
+### 🍎 macOS (via Homebrew):
+
+```bash
+brew install tree-sitter
 ```
 
-## Running the Preview Server
+### 🐧 Linux (via APT):
 
-The preview server builds the documentation and starts a local server to preview the site with live reload.
-
-To run the server, use:
-
-```powershell
-.\gradlew.bat :app:run
+```bash
+sudo apt-get update
+sudo apt-get install libtree-sitter-dev
 ```
 
-Once the server is running:
-- You can access the site at `http://localhost:8080`.
-- Any changes made to the `docs/` directory or the code snippets in `app/src/main/resources/` will trigger an automatic rebuild and refresh the browser.
+### 🪟 Windows (via Scoop or Chocolatey):
+If you are using Windows, we highly recommend installing via a package manager. Open your terminal and run one of the following:
 
-## Project Structure
+```powershell
+# If using Scoop
+scoop install tree-sitter
 
-- `docs/`: Contains the documentation source files in Markdown format.
-  - `latest/en/`: The latest English version of the docs.
-  - `<version>/<lang>/`: Specific versions and languages.
-- `app/`: The application module containing the preview server and the main entry point.
-- `engine/`: The core logic for processing Markdown and code snippets.
-- `build/site/`: The generated static site.
+# If using Chocolatey
+choco install tree-sitter
+```
 
 ## Kodedocs Snippets
 
 You can inject code snippets into your Markdown files using the following syntax:
 
-```markdown
-`​``kodedocs
-file: app/src/main/resources/test.java
+````markdown
+```kodedocs
+file: .../test.java
 include: main
 exclude: temp
-`​``
 ```
+````
 
 - `file`: Path to the source file.
 - `include`: Comma-separated list of `#region` names to include.
