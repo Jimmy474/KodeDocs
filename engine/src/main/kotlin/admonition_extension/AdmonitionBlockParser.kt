@@ -10,7 +10,6 @@ class AdmonitionBlockParser(type: String, title: String, isCollapsable: Boolean?
     private val block = AdmonitionBlock(type,title,isCollapsable)
 
     override fun getBlock(): Block = block
-
     override fun isContainer() = true
     override fun canContain(state: ParserState, blockParser: BlockParser, block: Block) = blockParser !is AdmonitionBlockParser
 
@@ -59,9 +58,7 @@ class AdmonitionBlockParser(type: String, title: String, isCollapsable: Boolean?
         }
 
         override fun getAfterDependents(): Set<Class<*>>? = null
-
         override fun getBeforeDependents(): Set<Class<*>> = setOf(ParagraphParser::class.java)
-
         override fun affectsGlobalScope(): Boolean = false
 
     }

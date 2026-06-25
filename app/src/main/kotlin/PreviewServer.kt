@@ -15,16 +15,14 @@ import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
-class PreviewServer(private val siteDir: File, private val port: Int = 8080) {
+class PreviewServer(private val siteDir: File, private val host: String = "0.0.0.0", private val port: Int = 8080) {
 
-    companion object {
-        val log: Logger = LoggerFactory.getLogger(this::class.java)
-    }
+    val log: Logger = LoggerFactory.getLogger(this::class.java)
 
     private val sessions = Collections.newSetFromMap(ConcurrentHashMap<DefaultWebSocketServerSession, Boolean>())
 
     fun start() {
-        embeddedServer(Netty, port = port) {
+        embeddedServer(Netty, port = port, host = host) {
             install(WebSockets)
 
             routing {
@@ -58,7 +56,7 @@ class PreviewServer(private val siteDir: File, private val port: Int = 8080) {
                 }
             }
         }.start(wait = false)
-        log.info("Preview server started at http://localhost:$port")
+        log.info("Preview server started at https://$host:$port")
     }
 
     suspend fun reload() {

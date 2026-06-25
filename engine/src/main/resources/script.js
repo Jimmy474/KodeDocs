@@ -115,8 +115,7 @@ function setup() {
         if (!manifest || !manifest.site) return;
 
         const site = manifest.site;
-        
-        // Branding
+
         if (site.brand) {
             const brandLogo = document.querySelector(".brand-logo");
             const brandMark = document.querySelector(".brand-mark");
@@ -134,7 +133,6 @@ function setup() {
             if (brandText) brandText.textContent = site.brand.name || "";
         }
 
-        // Navigation
         const topNav = document.querySelector(".top-nav");
         if (topNav && site.nav) {
             topNav.innerHTML = site.nav.map(item => {
@@ -400,7 +398,6 @@ function setup() {
             anchor.onclick = (event) => {
                 const href = anchor.getAttribute("href");
                 if (href && (href.startsWith("/") || href.startsWith("http"))) {
-                    // Check if it matches a doc page
                     const manifest = state.manifest;
                     const segments = href.replace(/^\/+|\/+$/g, "").split("/");
                     if (segments.length >= 3 && manifest.versions?.includes(segments[0])) {

@@ -12,12 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class Engine {
 
-    companion object {
-        private val log: Logger = LoggerFactory.getLogger(this::class.java)
-    }
+    private val log: Logger = LoggerFactory.getLogger(this::class.java)
 
     private val json = Json {
-        prettyPrint = true
+        prettyPrint = false
     }
     private val pageEntries = linkedMapOf<String, ManifestPageEntry>()
     private val standalonePageEntries = linkedMapOf<String, ManifestPageEntry>()
@@ -68,7 +66,8 @@ class Engine {
     @Serializable
     data class SiteConfig(
         val brand: BrandConfig? = null,
-        val nav: List<NavItem> = emptyList()
+        val nav: List<NavItem> = emptyList(),
+        val languageAliases: Map<String, String> = emptyMap(),
     )
 
     @Serializable
@@ -90,8 +89,8 @@ class Engine {
         if (!rootDir.exists()) throw IllegalArgumentException("Root directory does not exist at path: ${rootDir.path}")
 
         val contentDir = rootDir.resolve("content")
-        val assetsDir = rootDir.resolve("assets")
         val pagesDir = rootDir.resolve("pages")
+        val siteConfig = loadSiteConfig(rootDir)
 
         if (!outputDir.exists()) outputDir.mkdirs()
 
@@ -101,14 +100,8 @@ class Engine {
         val outputAssetsDir = outputDir.resolve("assets")
         outputAssetsDir.mkdirs()
 
-        if (assetsDir.exists()) {
-            assetsDir.copyRecursively(outputAssetsDir, overwrite = true)
-        }
-
-        writeBundledAssets(outputAssetsDir)
-
+        buildAssets(rootDir, outputDir)
         writeShell(outputDir)
-        File(outputDir, "/assets/index.html").delete()
 
         if (!contentDir.exists()) {
             log.info("No content directory found in ${rootDir.path}")
@@ -152,20 +145,11 @@ class Engine {
         val pageContents = runBlocking {
             pageInputs.chunked(chunkSize).map { chunk ->
                 async(Dispatchers.Default) {
-                    val preProcessor = PreProcessor()
-                    val highlighter = TreeSitterHighlighter()
-                    val markdownParser = MarkDownParser()
-
                     chunk.map { (version, language, mdFile) ->
                         val langDir = contentDir.resolve(version).resolve(language)
-
-                        val content = buildPageContent(
-                            version, language, langDir, mdFile,
-                            preProcessor, highlighter, markdownParser
-                        )
-
+                        val content = buildPageContent(rootDir, version, language, langDir, mdFile, siteConfig?.languageAliases)
                         val completed = completedPages.incrementAndGet()
-                        print("\rProgress: ${"%.2f%%".format(completed * 100f / parseTotalPages)} ($completed/$parseTotalPages)")
+                        printProgress(completed, parseTotalPages, "Parsing : ${content.manifestPageEntry.sourcePath}")
 
                         content
                     }
@@ -174,11 +158,13 @@ class Engine {
         }.sortedBy { it.manifestPageEntry.pageKey() }
         println()
 
+        TreeSitterHighlighter.clearMemory()
+
         val totalPages = pageContents.size.coerceAtLeast(1)
         pageContents.forEachIndexed { i, content ->
             pageEntries[content.manifestPageEntry.pageKey()] = content.manifestPageEntry
             writePage(outputDir, content)
-            print("\rProgress: ${"%.2f%%".format((i + 1) * 100f / totalPages)} (${i + 1}/$totalPages) Built ${content.manifestPageEntry.contentPath}")
+            printProgress(i + 1, totalPages, "Built : ${content.manifestPageEntry.contentPath}")
         }
         println("\n")
 
@@ -188,18 +174,8 @@ class Engine {
                 .sortedBy { it.relativeTo(pagesDir).invariantSeparatorsPath }
                 .toList()
 
-            val preProcessor = PreProcessor()
-            val highlighter = TreeSitterHighlighter()
-            val markdownParser = MarkDownParser()
-
             standaloneMdFiles.forEach { mdFile ->
-                val content = buildStandalonePageContent(
-                    pagesDir = pagesDir,
-                    mdFile = mdFile,
-                    preProcessor = preProcessor,
-                    highlighter = highlighter,
-                    markdownParser = markdownParser
-                )
+                val content = buildStandalonePageContent(rootDir, pagesDir, mdFile, siteConfig?.languageAliases)
                 standalonePageEntries[content.manifestPageEntry.sourcePath] = content.manifestPageEntry
                 writePage(outputDir, content)
             }
@@ -207,7 +183,106 @@ class Engine {
 
         lastVersions = versions
         lastLanguagesByVersion = languagesByVersion
-        writeManifest(outputDir, rootDir)
+        updateManifestAndWrite(outputDir, siteConfig)
+    }
+
+    fun loadSiteConfig(rootDir: File): SiteConfig? {
+        val configFile = File(rootDir, "config.json")
+        return if (configFile.exists()) {
+            runCatching { json.decodeFromString<SiteConfig>(configFile.readText()) }.getOrNull()
+        } else null
+    }
+
+    fun buildAssets(rootDir: File, outputDir: File) {
+        val assetsDir = rootDir.resolve("assets")
+        val outputAssetsDir = outputDir.resolve("assets")
+        if (!outputAssetsDir.exists()) outputAssetsDir.mkdirs()
+
+        if (assetsDir.exists()) {
+            assetsDir.copyRecursively(outputAssetsDir, overwrite = true)
+        }
+        writeBundledAssets(outputAssetsDir)
+        File(outputAssetsDir, "index.html").delete()
+    }
+
+    private fun resolvePageKey(mdFile: File, contentDir: File, pagesDir: File): String? {
+        return when {
+            isInside(contentDir, mdFile) -> {
+                val relativePath = mdFile.relativeTo(contentDir).invariantSeparatorsPath
+                val parts = relativePath.split("/")
+                if (parts.size >= 3) {
+                    val version = parts[0]
+                    val language = parts[1]
+                    val sourcePath = parts.drop(2).joinToString("/")
+                    "$version/$language/$sourcePath"
+                } else null
+            }
+            isInside(pagesDir, mdFile) -> {
+                mdFile.relativeTo(pagesDir).invariantSeparatorsPath
+            }
+            else -> null
+        }
+    }
+
+    private fun updateManifestAndWrite(outputDir: File, siteConfig: SiteConfig?) {
+        writeManifest(outputDir, siteConfig)
+    }
+
+    fun buildSinglePage(rootDir: File, outputDir: File, mdFile: File) {
+        val contentDir = rootDir.resolve("content")
+        val pagesDir = rootDir.resolve("pages")
+        val siteConfig = loadSiteConfig(rootDir)
+
+        if (!mdFile.exists()) {
+            val removedKey = resolvePageKey(mdFile, contentDir, pagesDir)
+
+            removedKey?.let {
+                if (isInside(contentDir, mdFile)) {
+                    pageEntries.remove(it)
+                } else {
+                    standalonePageEntries.remove(it)
+                }
+                updateManifestAndWrite(outputDir, siteConfig)
+            }
+            return
+        }
+
+        val content = buildPageInDir(rootDir, contentDir, pagesDir, mdFile, siteConfig)
+
+        content?.let {
+            if (it.manifestPageEntry.version != "standalone") {
+                pageEntries[it.manifestPageEntry.pageKey()] = it.manifestPageEntry
+            } else {
+                standalonePageEntries[it.manifestPageEntry.sourcePath] = it.manifestPageEntry
+            }
+            writePage(outputDir, it)
+            updateManifestAndWrite(outputDir, siteConfig)
+        }
+    }
+
+    private fun buildPageInDir(
+        rootDir: File,
+        contentDir: File,
+        pagesDir: File,
+        mdFile: File,
+        siteConfig: SiteConfig?
+    ): PageContent? {
+        return when {
+            isInside(contentDir, mdFile) -> {
+                val relativePath = mdFile.relativeTo(contentDir).invariantSeparatorsPath
+                val parts = relativePath.split("/")
+                if (parts.size >= 3) {
+                    val version = parts[0]
+                    val language = parts[1]
+                    val langDir = contentDir.resolve(version).resolve(language)
+                    buildPageContent(rootDir, version, language, langDir, mdFile, siteConfig?.languageAliases)
+                } else null
+            }
+            isInside(pagesDir, mdFile) -> {
+                buildStandalonePageContent(rootDir, pagesDir, mdFile, siteConfig?.languageAliases)
+            }
+            else -> null
+        }
     }
 
     private fun writeBundledAssets(outputAssetsDir: File) {
@@ -235,19 +310,18 @@ class Engine {
     }
 
     private fun buildPageContent(
+        rootDir: File,
         version: String,
         language: String,
         langDir: File,
         mdFile: File,
-        preProcessor: PreProcessor = PreProcessor(),
-        highlighter: TreeSitterHighlighter = TreeSitterHighlighter(),
-        markdownParser: MarkDownParser = MarkDownParser()
+        langAliases: Map<String, String>? = null,
     ): PageContent {
         val sourcePath = mdFile.relativeTo(langDir).invariantSeparatorsPath
         val pagePath = sourcePath.removeSuffix(".md")
-        val preProcessedContent = preProcessor.process(mdFile)
-        val highlightedMarkdown = highlighter.highlightMarkdown(preProcessedContent)
-        val parsed = markdownParser.parse(highlightedMarkdown)
+        val preProcessedContent = PreProcessor.process(rootDir,mdFile)
+        val highlightedMarkdown = TreeSitterHighlighter.highlightMarkdown(preProcessedContent, langAliases)
+        val parsed = MarkDownParser.parse(highlightedMarkdown)
         val title = parsed.metadata["title"]?.get(0) ?: mdFile.nameWithoutExtension.toTitle()
         val description = parsed.metadata["description"]?.get(0) ?: ""
         val contentPath = "content/$version/$language/${pagePath}.html"
@@ -257,28 +331,20 @@ class Engine {
     }
 
     private fun buildStandalonePageContent(
+        rootDir: File,
         pagesDir: File,
         mdFile: File,
-        preProcessor: PreProcessor,
-        highlighter: TreeSitterHighlighter,
-        markdownParser: MarkDownParser
+        langAliases: Map<String, String>? = null,
     ): PageContent {
         val relativePath = mdFile.relativeTo(pagesDir).invariantSeparatorsPath
         val pagePath = relativePath.removeSuffix(".md")
-        val preProcessedContent = preProcessor.process(mdFile)
-        val highlightedMarkdown = highlighter.highlightMarkdown(preProcessedContent)
-        val parsed = markdownParser.parse(highlightedMarkdown)
+        val preProcessedContent = PreProcessor.process(rootDir, mdFile)
+        val highlightedMarkdown = TreeSitterHighlighter.highlightMarkdown(preProcessedContent, langAliases)
+        val parsed = MarkDownParser.parse(highlightedMarkdown)
         val title = parsed.metadata["title"]?.firstOrNull() ?: mdFile.nameWithoutExtension.toTitle()
         val description = parsed.metadata["description"]?.firstOrNull()
         val contentPath = "pages/$pagePath.html"
-        val manifestPageEntry = ManifestPageEntry(
-            version = "standalone",
-            language = "standalone",
-            sourcePath = relativePath,
-            contentPath = contentPath,
-            title = title,
-            description = description
-        )
+        val manifestPageEntry = ManifestPageEntry("standalone", "standalone", relativePath, contentPath, title, description)
 
         return PageContent(manifestPageEntry, mdFile, parsed.html, parsed.metadata, parsed.headings)
     }
@@ -290,12 +356,7 @@ class Engine {
         }
     }
 
-    private fun writeManifest(outputDir: File, rootDir: File) {
-        val configFile = File(rootDir, "config.json")
-        val siteConfig = if (configFile.exists()) {
-            runCatching { json.decodeFromString<SiteConfig>(configFile.readText()) }.getOrNull()
-        } else null
-
+    private fun writeManifest(outputDir: File, siteConfig: SiteConfig?) {
         outputDir.resolve("manifest.json").writeText(
             manifestJson(lastVersions, lastLanguagesByVersion, pageEntries.values.toList(), standalonePageEntries, siteConfig)
         )

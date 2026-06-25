@@ -8,8 +8,9 @@ directoryWatcher = "0.19.1"
 flexmark = "0.64.8"
 jsoup = "1.22.2"
 jna = "5.19.1"
-treesitterlanguagepack = "1.10.7"
+treesitterlanguagepack = "1.10.9"
 logback = "1.5.34"
+jansi = "2.4.3"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -27,6 +28,7 @@ jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jnaPlatform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 kruezberg-treesitter-language-pack = { module = "dev.kreuzberg.treesitterlanguagepack:tree-sitter-language-pack", version.ref = "treesitterlanguagepack" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref="logback" }
+jansi = { module = "org.fusesource.jansi:jansi", version.ref="jansi" }
 
 [bundles]
 kotlinxEcosystem = ["kotlinxDatetime", "kotlinxSerialization", "kotlinxCoroutines"]

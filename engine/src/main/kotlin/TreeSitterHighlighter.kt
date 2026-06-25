@@ -3,27 +3,38 @@ import dev.kreuzberg.treesitterlanguagepack.TreeSitterLanguagePack
 import io.github.treesitter.jtreesitter.Parser
 import io.github.treesitter.jtreesitter.Query
 import io.github.treesitter.jtreesitter.QueryCursor
+import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.jvm.optionals.getOrNull
 
-class TreeSitterHighlighter {
+object TreeSitterHighlighter {
 
-    object HighlighterCache {
-        val queries = ConcurrentHashMap<String, Query>()
+    private val log = LoggerFactory.getLogger(this::class.java)
+    private val queries = ConcurrentHashMap<String, Query>()
+    private val unavailableLanguages = ConcurrentHashMap.newKeySet<String>()
+
+    fun clearMemory(){
+        log.info("Following languages could not be highlighted due to parsers not being available for them: ${unavailableLanguages.joinToString(){
+            "\u001b[91m$it\u001b[0m"
+        }}")
+        unavailableLanguages.clear()
+
+        queries.clear()
     }
 
     private val fenceRegex = Regex(
-        pattern = """^```([^\n`]*)\n([\s\S]*?)\n```$""",
+        pattern = """^(?<fence>`{3,})((?<lang>[a-z-]*)?(?<nolinenumbers>:no-line-numbers)?)\n(?<code>[\s\S]*?)\n(\k<fence>)$""",
         options = setOf(RegexOption.MULTILINE)
     )
 
-    fun highlightMarkdown(markdown: String): String {
+    fun highlightMarkdown(markdown: String, langAliases: Map<String, String>?): String {
         return fenceRegex.replace(markdown) { match ->
-            val info = match.groupValues[1].trim()
-            val language = info.split(Regex("""\s+""")).firstOrNull()?.takeIf { it.isNotBlank() } ?: "text"
-            val code = match.groupValues[2]
+            val language = (match.groups["lang"]?.value?.takeIf { it.isNotBlank() } ?: "text").let{
+                langAliases?.get(it) ?: it
+            }
+            val code = match.groups["code"]?.value ?: ""
             val (highlighted, hasFocused) = highlightCode(code, language)
-            val useLineNumbers = true
+            val useLineNumbers = match.groups["nolinenumbers"] == null
             buildHtml {
                 div(
                     "kode-code-block",
@@ -49,11 +60,23 @@ class TreeSitterHighlighter {
 
     fun highlightCode(code: String, languageName: String): Pair<String, Boolean> {
         val normalizedCode = code.replace("\r\n", "\n")
-        val language = TreeSitterLanguagePack.getLanguage(languageName) ?: return normalizedCode to false
 
-        val query = HighlighterCache.queries.getOrPut(languageName) {
-            val querySource = TreeSitterLanguagePack.getHighlightsQuery(languageName) ?: return normalizedCode to false
-            Query(language, querySource)
+        if(languageName == "text") return renderPlain(normalizedCode)
+
+        if(!TreeSitterLanguagePack.hasLanguage(languageName)){
+            unavailableLanguages.add(languageName)
+            return renderPlain(normalizedCode)
+        }
+        val language = TreeSitterLanguagePack.getLanguage(languageName) ?: return renderPlain(normalizedCode)
+
+        val query = queries.getOrPut(languageName) {
+            val querySource = TreeSitterLanguagePack.getHighlightsQuery(languageName) ?: return renderPlain(normalizedCode)
+            try{
+                Query(language, querySource)
+            }catch (e: Exception){
+                log.error("Error parsing query: ${e.message}")
+                return renderPlain(normalizedCode)
+            }
         }
 
         return Parser(language).use { parser ->
@@ -78,8 +101,12 @@ class TreeSitterHighlighter {
 
                     renderLinesToHtml(extractLinesFromCharMap(normalizedCode, charClasses))
                 }
-            } ?: (escapeHtml(normalizedCode) to false)
+            } ?: renderPlain(normalizedCode)
         }
+    }
+
+    fun renderPlain(code: String): Pair<String, Boolean>{
+        return renderLinesToHtml(listOf(HighlightLine(listOf(HighlightToken(code, null)))))
     }
 
     private fun extractLinesFromCharMap(code: String, charClasses: Array<String?>): List<HighlightLine> {

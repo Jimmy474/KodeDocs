@@ -21,6 +21,7 @@ dependencies {
         exclude("io.github.tree-sitter", "jtreesitter")
     }
     implementation(libs.logback)
+    implementation(libs.jansi)
 
     implementation(libs.bundles.kotlinxEcosystem)
 }

@@ -1,5 +1,6 @@
 
 import admonition_extension.AdmonitionExtension
+import com.vladsch.flexmark.ext.anchorlink.AnchorLink
 import com.vladsch.flexmark.ext.anchorlink.AnchorLinkExtension
 import com.vladsch.flexmark.ext.attributes.AttributesExtension
 import com.vladsch.flexmark.ext.emoji.EmojiExtension
@@ -15,7 +16,7 @@ import com.vladsch.flexmark.util.data.MutableDataHolder
 import com.vladsch.flexmark.util.data.MutableDataSet
 import kotlinx.serialization.Serializable
 
-class MarkDownParser {
+object MarkDownParser {
     private val options: MutableDataHolder = MutableDataSet().set(
         Parser.EXTENSIONS,
         listOf(
@@ -44,13 +45,18 @@ class MarkDownParser {
         val html = renderer.render(document)
 
         val headings = mutableListOf<Heading>()
-        val headingRegex = Regex("""<h([1-6])(?:\s+id="([^"]*)")?>(.*?)<a\s+class="anchor-link"\s+href="#\2">""", RegexOption.DOT_MATCHES_ALL)
-        
-        headingRegex.findAll(html).forEach { match ->
-            val level = match.groupValues[1].toInt()
-            val id = match.groupValues[2]
-            val text = match.groupValues[3].replace(Regex("<.*?>"), "").trim()
-            headings.add(Heading(level, text, id))
+
+        var node = document.firstChild
+
+        while (node != null) {
+            if (node is com.vladsch.flexmark.ast.Heading) {
+                node.firstChild?.let {
+                    if(it is AnchorLink){
+                        headings.add(Heading(node.level,it.firstChild?.chars?.toString() ?: node.text.toString(), node.anchorRefId))
+                    }
+                }
+            }
+            node = node.next
         }
         
         return ParsedResult(html, headings, frontMatterVisitor.data)

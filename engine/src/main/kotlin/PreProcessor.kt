@@ -1,16 +1,52 @@
 import java.io.File
 
-class PreProcessor {
+object PreProcessor {
 
-    companion object{
-        const val KODEDOCS_PREFIX = "kodedocs"
-        val REGION_PREFIX_REGEX = """^//\s*#region""".toRegex()
-        val END_REGION_PREFIX_REGEX = """^//\s*#endregion""".toRegex()
-        val REGION_NAME_REGEX = "[a-zA-Z_][a-zA-Z0-9_]*".toRegex()
+    const val KODEDOCS_PREFIX = "kodedocs"
+    val REGION_PREFIX_REGEX = """^//\s*#region""".toRegex()
+    val END_REGION_PREFIX_REGEX = """^//\s*#endregion""".toRegex()
+    val REGION_NAME_REGEX = "[a-zA-Z_][a-zA-Z0-9_]*".toRegex()
+    val ARGS_REGEX = Regex("""(\w+)\s*:\s*("[^"]+"|\S+)""")
 
-    }
+    private val languageMap = mapOf(
+        "kt" to "kotlin",
+        "java" to "java",
+        "js" to "javascript",
+        "py" to "python",
+        "cs" to "csharp",
+        "cpp" to "cpp",
+        "rb" to "ruby",
+        "swift" to "swift",
+        "go" to "go",
+        "rs" to "rust",
+        "php" to "php",
+        "scala" to "scala",
+        "ktm" to "kotlin",
+        "kts" to "kotlin",
+        "groovy" to "groovy",
+        "html" to "html",
+        "css" to "css",
+        "sql" to "sql",
+        "xml" to "xml",
+        "yaml" to "yaml",
+        "toml" to "toml",
+        "json" to "json",
+        "sh" to "shell",
+        "bat" to "batch",
+        "ps1" to "powershell",
+        "psm1" to "powershell",
+        "psd1" to "powershell",
+        "lua" to "lua",
+        "ts" to "typescript",
+        "tsx" to "typescript",
+        "jsx" to "javascript",
+        "dart" to "dart",
+        "r" to "r",
+        "c" to "c",
+        "md" to "markdown",
+    )
 
-    fun process(input: File): String {
+    fun process(rootDir: File, input: File): String {
         val rawContent = input.readText()
         
         val regex = Regex("""```$KODEDOCS_PREFIX\s+([^`]*)```""")
@@ -23,21 +59,18 @@ class PreProcessor {
             val lines = args["lines"]?.split(",") ?: emptyList()
             val lineNumbers = args["lineNumbers"]?.toIntOrNull() ?: 0
 
-            val codeFile = File(file)
+            val codeFile = rootDir.resolve(file)
             if (!codeFile.exists()) throw IllegalArgumentException("File $file not found in ${input.name}")
             val codeContent = codeFile.readText()
 
             val language = detectLanguage(codeFile.extension)
 
-            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```\n{lineNumbers=\"$lineNumbers\"}\n".also {
-//                println("Processed\n\n$it\n----------------------------------------\n")
-            }
+            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```\n{lineNumbers=\"$lineNumbers\"}\n"
         }
         return processedContent
     }
 
-    @Suppress("d")
-    fun processKodeDocs(input: String, include: List<String>, exclude: List<String>, lineStrings: List<String>, filePath: String = "unknown"): String{
+    private fun processKodeDocs(input: String, include: List<String>, exclude: List<String>, lineStrings: List<String>, filePath: String = "unknown"): String{
         val output = StringBuilder()
         var skipping = 0
         var including = 0
@@ -89,51 +122,13 @@ class PreProcessor {
         return output.toString().trimIndent()
     }
 
-    fun parseArgs(input: String): Map<String, String> {
-        val regex = Regex("""(\w+)\s*:\s*("[^"]+"|\S+)""")
-        return regex.findAll(input).associate {
+    private fun parseArgs(input: String): Map<String, String> {
+        return ARGS_REGEX.findAll(input).associate {
             val key = it.groupValues[1]
             val value = it.groupValues[2].trim('"')
             key to value
         }
     }
 
-    fun detectLanguage(extension: String) = when(extension){
-        "kt" -> "kotlin"
-        "java" -> "java"
-        "js" -> "javascript"
-        "py" -> "python"
-        "cs" -> "csharp"
-        "cpp" -> "cpp"
-        "rb" -> "ruby"
-        "swift" -> "swift"
-        "go" -> "go"
-        "rs" -> "rust"
-        "php" -> "php"
-        "scala" -> "scala"
-        "ktm" -> "kotlin"
-        "kts" -> "kotlin"
-        "groovy" -> "groovy"
-        "html" -> "html"
-        "css" -> "css"
-        "sql" -> "sql"
-        "xml" -> "xml"
-        "yaml" -> "yaml"
-        "toml" -> "toml"
-        "json" -> "json"
-        "sh" -> "shell"
-        "bat" -> "batch"
-        "ps1" -> "powershell"
-        "psm1" -> "powershell"
-        "psd1" -> "powershell"
-        "lua" -> "lua"
-        "ts" -> "typescript"
-        "tsx" -> "typescript"
-        "jsx" -> "javascript"
-        "dart" -> "dart"
-        "r" -> "r"
-        "c" -> "c"
-        "md" -> "markdown"
-        else -> "text"
-    }
+    private fun detectLanguage(extension: String) = languageMap[extension.lowercase()] ?: "text"
 }

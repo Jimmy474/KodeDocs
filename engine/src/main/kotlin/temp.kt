@@ -1,4 +1,5 @@
 
+import java.io.File
 import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createDirectories
@@ -7,27 +8,23 @@ import kotlin.io.path.writeText
 import kotlin.random.Random
 
 fun main() {
-//    val temp = TreeSitterHighlighter()
-//
-//    println(temp.highlightMarkdown("""
-//        hello
-//
-//        ```java
-//        public class TestClass {}
-//        ```
-//
-//        ```java
-//        public class TestClass0 {}
-//        public class TestClass1 {}
-//        public class TestClass2 {}
-//        ```
-//
-//        world
-//    """.trimIndent()))
+//    val names = listOf("2.0.0","3.0.0","4.0.0","5.0.0")
+//    val root = File("docs/content")
+//    fixFile(root)
 
-    val languages = listOf("en", "fr", "es", "de", "it", "ja", "ko", "zh")
-    val versions = buildList { repeat(15){ add("${it+1}.0.0") } }
-    generateTestFiles(Path.of("docs"), 40, languages, versions)
+//    val languages = listOf("en", "fr", "es", "de", "it", "ja", "ko", "zh")
+//    val versions = buildList { repeat(15){ add("${it+1}.0.0") } }
+//    generateTestFiles(Path.of("docs"), 40, languages, versions)
+}
+
+fun fixFile(file: File) {
+    val regex = Regex("""^:::\s*details\s+Hide\s+([a-zA-Z]+)\n([\s\S]*?)\n:::$""", RegexOption.MULTILINE)
+    if (file.isDirectory) {
+        file.listFiles()?.forEach { fixFile(it) }
+    }else{
+        val content = file.readText()
+        file.writeText(regex.replace(content, "::: info | $1 [close]\n$2\n:::"))
+    }
 }
 
 @OptIn(ExperimentalPathApi::class)
