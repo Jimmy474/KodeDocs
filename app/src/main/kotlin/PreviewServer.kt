@@ -1,5 +1,6 @@
 package com.jimmy.app
 
+import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.http.content.*
@@ -15,7 +16,7 @@ import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
-class PreviewServer(private val siteDir: File, private val host: String = "0.0.0.0", private val port: Int = 8080) {
+class PreviewServer(private val siteDir: File, private val host: String = "localhost", private val port: Int = 8080) {
 
     val log: Logger = LoggerFactory.getLogger(this::class.java)
 
@@ -48,7 +49,7 @@ class PreviewServer(private val siteDir: File, private val host: String = "0.0.0
                     if (file.exists()) {
                         call.respondFile(file)
                     } else {
-                        call.respondText("manifest.json not found", status = io.ktor.http.HttpStatusCode.NotFound)
+                        call.respondText("manifest.json not found", status = HttpStatusCode.NotFound)
                     }
                 }
                 get("{...}") {
@@ -56,7 +57,7 @@ class PreviewServer(private val siteDir: File, private val host: String = "0.0.0
                 }
             }
         }.start(wait = false)
-        log.info("Preview server started at https://$host:$port")
+        log.info("Preview server started at http://$host:$port")
     }
 
     suspend fun reload() {

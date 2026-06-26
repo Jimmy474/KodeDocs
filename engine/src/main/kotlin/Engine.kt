@@ -1,26 +1,36 @@
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
 
-class Engine {
+object Engine {
+
+    val AUTHOR_REGEX = Regex("""[^a-zA-Z0-9_-]""")
 
     private val log: Logger = LoggerFactory.getLogger(this::class.java)
 
     private val json = Json {
         prettyPrint = false
     }
-    private val pageEntries = linkedMapOf<String, ManifestPageEntry>()
-    private val standalonePageEntries = linkedMapOf<String, ManifestPageEntry>()
-    private var lastVersions: List<String> = emptyList()
-    private var lastLanguagesByVersion: Map<String, List<String>> = emptyMap()
+
+    sealed interface PageInput {
+        val mdFile: File
+
+        data class Versioned(
+            val version: String,
+            val language: String,
+            val langDir: File,
+            override val mdFile: File
+        ) : PageInput
+
+        data class Standalone(
+            val pagesDir: File,
+            override val mdFile: File
+        ) : PageInput
+    }
 
     @Serializable
     data class ManifestPageEntry(
@@ -109,81 +119,85 @@ class Engine {
             return
         }
 
-        val versions = contentDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
-        if (versions.isEmpty()) {
-            log.info("No versions found in ${contentDir.path}")
+        val pageInputs = mutableListOf<PageInput>()
+        val versions = mutableListOf<String>()
+        val languagesByVersion = linkedMapOf<String, List<String>>()
+
+        if (contentDir.exists()) {
+            val foundVersions = contentDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
+            versions.addAll(foundVersions)
+
+            for (version in versions) {
+                val versionDir = contentDir.resolve(version)
+                val languages = versionDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
+                languagesByVersion[version] = languages
+
+                for (language in languages) {
+                    val langDir = versionDir.resolve(language)
+                    langDir.walkTopDown()
+                        .filter { it.isFile && it.extension.equals("md", ignoreCase = true) }
+                        .forEach { mdFile ->
+                            pageInputs += PageInput.Versioned(version, language, langDir, mdFile)
+                        }
+                }
+            }
+        }
+
+        if (pagesDir.exists()) {
+            pagesDir.walkTopDown()
+                .filter { it.isFile && it.extension.equals("md", ignoreCase = true) }
+                .forEach { mdFile ->
+                    pageInputs += PageInput.Standalone(pagesDir, mdFile)
+                }
+        }
+
+        if (pageInputs.isEmpty()) {
+            log.info("No markdown files found to process.")
             outputDir.resolve("manifest.json").writeText(emptyManifest())
             return
         }
 
-        val languagesByVersion = linkedMapOf<String, List<String>>()
-        val pageInputs = mutableListOf<Triple<String, String, File>>()
-        pageEntries.clear()
-        standalonePageEntries.clear()
-
-        for (version in versions) {
-            val versionDir = contentDir.resolve(version)
-            val languages = versionDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
-            languagesByVersion[version] = languages
-
-            for (language in languages) {
-                val langDir = versionDir.resolve(language)
-                val mdFiles = langDir.walkTopDown()
-                    .filter { it.isFile && it.extension.equals("md", ignoreCase = true) }
-                    .sortedBy { it.relativeTo(langDir).invariantSeparatorsPath }
-                    .toList()
-
-                mdFiles.forEach { mdFile -> pageInputs += Triple(version, language, mdFile) }
-            }
-        }
-
-        val completedPages = AtomicInteger(0)
-        val parseTotalPages = pageInputs.size.coerceAtLeast(1)
-        val cores = Runtime.getRuntime().availableProcessors()
-        val chunkSize = maxOf(1, pageInputs.size / cores)
-
+        log.info("Building ${pageInputs.size} pages...")
         val pageContents = runBlocking {
-            pageInputs.chunked(chunkSize).map { chunk ->
+            pageInputs.map { input ->
                 async(Dispatchers.Default) {
-                    chunk.map { (version, language, mdFile) ->
-                        val langDir = contentDir.resolve(version).resolve(language)
-                        val content = buildPageContent(rootDir, version, language, langDir, mdFile, siteConfig?.languageAliases)
-                        val completed = completedPages.incrementAndGet()
-                        printProgress(completed, parseTotalPages, "Parsing : ${content.manifestPageEntry.sourcePath}")
-
-                        content
+                    val content = when (input) {
+                        is PageInput.Versioned -> buildPageContent(rootDir, input.version, input.language, input.langDir, input.mdFile, siteConfig?.languageAliases)
+                        is PageInput.Standalone -> buildStandalonePageContent(rootDir, input.pagesDir, input.mdFile, siteConfig?.languageAliases)
                     }
+
+                    withContext(Dispatchers.IO) {
+                        writePage(outputDir, content)
+                    }
+
+                    content
                 }
-            }.awaitAll().flatten()
-        }.sortedBy { it.manifestPageEntry.pageKey() }
-        println()
+            }.awaitAll()
+        }
 
         TreeSitterHighlighter.clearMemory()
 
-        val totalPages = pageContents.size.coerceAtLeast(1)
-        pageContents.forEachIndexed { i, content ->
-            pageEntries[content.manifestPageEntry.pageKey()] = content.manifestPageEntry
-            writePage(outputDir, content)
-            printProgress(i + 1, totalPages, "Built : ${content.manifestPageEntry.contentPath}")
-        }
-        println("\n")
+        val versionedEntries = mutableMapOf<String, ManifestPageEntry>()
+        val standaloneEntries = mutableMapOf<String, ManifestPageEntry>()
 
-        if (pagesDir.exists()) {
-            val standaloneMdFiles = pagesDir.walkTopDown()
-                .filter { it.isFile && it.extension.equals("md", ignoreCase = true) }
-                .sortedBy { it.relativeTo(pagesDir).invariantSeparatorsPath }
-                .toList()
-
-            standaloneMdFiles.forEach { mdFile ->
-                val content = buildStandalonePageContent(rootDir, pagesDir, mdFile, siteConfig?.languageAliases)
-                standalonePageEntries[content.manifestPageEntry.sourcePath] = content.manifestPageEntry
-                writePage(outputDir, content)
+        pageContents.forEach { content ->
+            val entry = content.manifestPageEntry
+            if (entry.version == "standalone") {
+                standaloneEntries[entry.sourcePath] = entry
+            } else {
+                versionedEntries[entry.pageKey()] = entry
             }
         }
 
-        lastVersions = versions
-        lastLanguagesByVersion = languagesByVersion
-        updateManifestAndWrite(outputDir, siteConfig)
+        val manifestContent = manifestJson(
+            versions = versions,
+            languagesByVersion = languagesByVersion,
+            manifestPageEntries = versionedEntries.values.toList(),
+            standalonePageEntries = standaloneEntries,
+            siteConfig = siteConfig
+        )
+
+        outputDir.resolve("manifest.json").writeText(manifestContent)
     }
 
     fun loadSiteConfig(rootDir: File): SiteConfig? {
@@ -224,8 +238,34 @@ class Engine {
         }
     }
 
-    private fun updateManifestAndWrite(outputDir: File, siteConfig: SiteConfig?) {
-        writeManifest(outputDir, siteConfig)
+    private fun loadExistingManifest(outputDir: File): Manifest? {
+        val manifestFile = File(outputDir, "manifest.json")
+        return if (manifestFile.exists()) {
+            runCatching { json.decodeFromString<Manifest>(manifestFile.readText()) }
+                .onFailure { log.error("Failed to parse existing manifest", it) }
+                .getOrNull()
+        } else null
+    }
+
+    private fun writeUpdatedManifest(
+        outputDir: File,
+        baseManifest: Manifest,
+        updatedPages: Map<String, ManifestPageEntry>,
+        updatedStandalone: Map<String, ManifestPageEntry>,
+        siteConfig: SiteConfig?
+    ) {
+        val updatedTrees = updatedPages.values
+            .groupBy { "${it.version}/${it.language}" }
+            .mapValues { treeJson(it.value) }
+
+        val newManifest = baseManifest.copy(
+            site = siteConfig,
+            pages = updatedPages,
+            standalonePages = updatedStandalone,
+            trees = updatedTrees
+        )
+
+        outputDir.resolve("manifest.json").writeText(json.encodeToString(newManifest))
     }
 
     fun buildSinglePage(rootDir: File, outputDir: File, mdFile: File) {
@@ -233,16 +273,26 @@ class Engine {
         val pagesDir = rootDir.resolve("pages")
         val siteConfig = loadSiteConfig(rootDir)
 
+        val currentManifest = loadExistingManifest(outputDir) ?: run {
+            log.warn("No existing manifest found. Falling back to full build.")
+            build(rootDir, outputDir)
+            return
+        }
+
+        val mutablePages = currentManifest.pages.toMutableMap()
+        val mutableStandalone = currentManifest.standalonePages.toMutableMap()
+
         if (!mdFile.exists()) {
             val removedKey = resolvePageKey(mdFile, contentDir, pagesDir)
-
-            removedKey?.let {
+            removedKey?.let { key ->
                 if (isInside(contentDir, mdFile)) {
-                    pageEntries.remove(it)
+                    val removedEntry = mutablePages.remove(key)
+                    removedEntry?.let { outputDir.resolve(it.contentPath).delete() }
                 } else {
-                    standalonePageEntries.remove(it)
+                    val removedEntry = mutableStandalone.remove(key)
+                    removedEntry?.let { outputDir.resolve(it.contentPath).delete() }
                 }
-                updateManifestAndWrite(outputDir, siteConfig)
+                writeUpdatedManifest(outputDir, currentManifest, mutablePages, mutableStandalone, siteConfig)
             }
             return
         }
@@ -251,12 +301,13 @@ class Engine {
 
         content?.let {
             if (it.manifestPageEntry.version != "standalone") {
-                pageEntries[it.manifestPageEntry.pageKey()] = it.manifestPageEntry
+                mutablePages[it.manifestPageEntry.pageKey()] = it.manifestPageEntry
             } else {
-                standalonePageEntries[it.manifestPageEntry.sourcePath] = it.manifestPageEntry
+                mutableStandalone[it.manifestPageEntry.sourcePath] = it.manifestPageEntry
             }
+
             writePage(outputDir, it)
-            updateManifestAndWrite(outputDir, siteConfig)
+            writeUpdatedManifest(outputDir, currentManifest, mutablePages, mutableStandalone, siteConfig)
         }
     }
 
@@ -356,12 +407,6 @@ class Engine {
         }
     }
 
-    private fun writeManifest(outputDir: File, siteConfig: SiteConfig?) {
-        outputDir.resolve("manifest.json").writeText(
-            manifestJson(lastVersions, lastLanguagesByVersion, pageEntries.values.toList(), standalonePageEntries, siteConfig)
-        )
-    }
-
     private fun renderPageHtml(content: PageContent): String {
         val meta = PageMeta(
             title = content.manifestPageEntry.title,
@@ -385,7 +430,7 @@ class Engine {
     }
 
     private fun renderAuthor(author: String): String {
-        val username = author.replace(Regex("""[^a-zA-Z0-9_-]"""), "")
+        val username = author.replace(AUTHOR_REGEX, "")
         if (username.isBlank()) return ""
         val escaped = username.escapeHtml()
         return """
@@ -508,12 +553,4 @@ class Engine {
             .split(" ")
             .filter { it.isNotBlank() }
             .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
-
-    private fun String.escapeHtml(): String =
-        replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#39;")
-
 }

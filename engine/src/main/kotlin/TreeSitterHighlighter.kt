@@ -4,22 +4,46 @@ import io.github.treesitter.jtreesitter.Parser
 import io.github.treesitter.jtreesitter.Query
 import io.github.treesitter.jtreesitter.QueryCursor
 import org.slf4j.LoggerFactory
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.jvm.optionals.getOrNull
+
+class ResourcePool<T>(private val factory: () -> T) {
+    private val pool = ConcurrentLinkedQueue<T>()
+    fun acquire(): T = pool.poll() ?: factory()
+    fun release(item: T) { pool.offer(item) }
+}
 
 object TreeSitterHighlighter {
 
     private val log = LoggerFactory.getLogger(this::class.java)
     private val queries = ConcurrentHashMap<String, Query>()
     private val unavailableLanguages = ConcurrentHashMap.newKeySet<String>()
+    private val parserPool = ResourcePool { Parser() }
+    private val cursorPools = ConcurrentHashMap<String, ResourcePool<QueryCursor>>()
+    private val cssClassCache = ConcurrentHashMap<String, String>()
 
-    fun clearMemory(){
-        log.info("Following languages could not be highlighted due to parsers not being available for them: ${unavailableLanguages.joinToString(){
-            "\u001b[91m$it\u001b[0m"
-        }}")
-        unavailableLanguages.clear()
+    private val SPECIAL_CODES = mapOf(
+        "[code highlight]" to "highlighted",
+        "[code highlight error]" to "highlighted error",
+        "[code highlight warning]" to "highlighted warning",
+        "[code highlight info]" to "highlighted info",
+        "[code focus]" to "focused",
+        "[code add]" to "diff add",
+        "[code remove]" to "diff remove"
+    )
 
+    fun clearMemory() {
+        if (unavailableLanguages.isNotEmpty()) {
+            log.info("Following languages could not be highlighted due to parsers not being available for them: ${
+                unavailableLanguages.joinToString { "\u001b[91m$it\u001b[0m" }
+            }")
+            unavailableLanguages.clear()
+        }
         queries.clear()
+        cursorPools.clear()
+        cssClassCache.clear()
     }
 
     private val fenceRegex = Regex(
@@ -29,25 +53,24 @@ object TreeSitterHighlighter {
 
     fun highlightMarkdown(markdown: String, langAliases: Map<String, String>?): String {
         return fenceRegex.replace(markdown) { match ->
-            val language = (match.groups["lang"]?.value?.takeIf { it.isNotBlank() } ?: "text").let{
+            val language = (match.groups["lang"]?.value?.takeIf { it.isNotBlank() } ?: "text").let {
                 langAliases?.get(it) ?: it
             }
             val code = match.groups["code"]?.value ?: ""
             val (highlighted, hasFocused) = highlightCode(code, language)
             val useLineNumbers = match.groups["nolinenumbers"] == null
+
             buildHtml {
                 div(
                     "kode-code-block",
-                    "language-${escapeHtml(language)}",
+                    "language-${language.escapeHtml()}",
                     if (useLineNumbers) "line-numbers-mode" else ""
                 ) {
                     if (useLineNumbers) {
                         div("line-numbers") {
-                            buildList<String> {
-                                repeat(code.lines().size) {
-                                    span { +"${it + 1}" }
-                                }
-                            }.joinToString("\n")
+                            var lineCount = 1
+                            for (char in code) { if (char == '\n') lineCount++ }
+                            for (i in 1..lineCount) { span { +"$i" } }
                         }
                     }
                     tag("pre", if (hasFocused) " has-focused" else "") {
@@ -61,7 +84,7 @@ object TreeSitterHighlighter {
     fun highlightCode(code: String, languageName: String): Pair<String, Boolean> {
         val normalizedCode = code.replace("\r\n", "\n")
 
-        if(languageName == "text") return renderPlain(normalizedCode)
+        if (languageName == "text") return renderPlain(normalizedCode)
 
         if(!TreeSitterLanguagePack.hasLanguage(languageName)){
             unavailableLanguages.add(languageName)
@@ -71,143 +94,138 @@ object TreeSitterHighlighter {
 
         val query = queries.getOrPut(languageName) {
             val querySource = TreeSitterLanguagePack.getHighlightsQuery(languageName) ?: return renderPlain(normalizedCode)
-            try{
+            try {
                 Query(language, querySource)
-            }catch (e: Exception){
+            } catch (e: Exception) {
                 log.error("Error parsing query: ${e.message}")
                 return renderPlain(normalizedCode)
             }
         }
 
-        return Parser(language).use { parser ->
+        val cursorPool = cursorPools.getOrPut(languageName) { ResourcePool { QueryCursor(query) } }
+        val parser = parserPool.acquire()
+        val cursor = cursorPool.acquire()
+
+        return try {
+            parser.setLanguage(language)
             parser.parse(normalizedCode).getOrNull()?.use { tree ->
-                QueryCursor(query).use { cursor ->
-                    val charClasses = arrayOfNulls<String>(normalizedCode.length)
-                    val matches = cursor.findMatches(tree.rootNode, QueryCursor.Options())
+                val charClasses = arrayOfNulls<String>(normalizedCode.length)
+                val size = charClasses.size
+                cursor.findCaptures(tree.rootNode, QueryCursor.Options()).forEach { (_,match) ->
+                    for (capture in match.captures()) {
+                        val captureName = capture.name
+                        val cssClass = cssClassCache.getOrPut(captureName) {
+                            "ts-${captureName.replace('.', '-')}"
+                        }
 
-                    for (match in matches) {
-                        for (capture in match.captures()) {
-                            val cssClass = "ts-${capture.name.replace(".", "-")}"
-                            val start = capture.node().startByte
-                            val end = capture.node().endByte
+                        val node = capture.node()
+                        val start = node.startByte.coerceAtMost(size)
+                        val end = node.endByte.coerceAtMost(size)
 
-                            for (i in start until end) {
-                                if (i in charClasses.indices) {
-                                    charClasses[i] = cssClass
-                                }
-                            }
+                        if (start < end) {
+                            Arrays.fill(charClasses, start, end, cssClass)
                         }
                     }
-
-                    renderLinesToHtml(extractLinesFromCharMap(normalizedCode, charClasses))
                 }
+
+                renderHighlightedHtml(normalizedCode, charClasses)
             } ?: renderPlain(normalizedCode)
+        } finally {
+            parserPool.release(parser)
+            cursorPool.release(cursor)
         }
     }
 
-    fun renderPlain(code: String): Pair<String, Boolean>{
-        return renderLinesToHtml(listOf(HighlightLine(listOf(HighlightToken(code, null)))))
-    }
-
-    private fun extractLinesFromCharMap(code: String, charClasses: Array<String?>): List<HighlightLine> {
-        val lines = mutableListOf<HighlightLine>()
-        var currentLine = mutableListOf<HighlightToken>()
-
+    fun renderPlain(code: String): Pair<String, Boolean> {
+        val sb = StringBuilder(code.length + code.length / 10)
         var i = 0
-        while (i < code.length) {
-            val currentClass = charClasses[i]
-            val startIndex = i
+        val length = code.length
+        while (i < length) {
+            var lineEnd = i
+            while (lineEnd < length && code[lineEnd] != '\n') lineEnd++
 
-            while (i < code.length && charClasses[i] == currentClass && code[i] != '\n') {
-                i++
-            }
+            val chunk = code.substring(i, lineEnd)
+            sb.append("<span class=\"line\">").append(chunk.escapeHtml()).append("</span>\n")
 
-            val chunk = code.substring(startIndex, i)
-            if (chunk.isNotEmpty()) {
-                currentLine.add(HighlightToken(chunk, currentClass))
-            }
-
-            if (i < code.length && code[i] == '\n') {
-                lines.add(HighlightLine(currentLine))
-                currentLine = mutableListOf()
-                i++
-            }
+            i = lineEnd
+            if (i < length && code[i] == '\n') i++
         }
-
-        if (currentLine.isNotEmpty() || lines.isEmpty()) {
-            lines.add(HighlightLine(currentLine))
-        }
-
-        return lines
+        return sb.toString().trimEnd('\n') to false
     }
 
-    private fun renderLinesToHtml(lines: List<HighlightLine>): Pair<String, Boolean> {
-        val sb = StringBuilder()
+    private fun renderHighlightedHtml(code: String, charClasses: Array<String?>): Pair<String, Boolean> {
+        val sb = StringBuilder(code.length + code.length / 2)
         var hasFocusedLine = false
+        var i = 0
+        val length = code.length
 
-        val specialCodes = mapOf(
-            "[code highlight]" to "highlighted",
-            "[code highlight error]" to "highlighted error",
-            "[code highlight warning]" to "highlighted warning",
-            "[code highlight info]" to "highlighted info",
-            "[code focus]" to "focused",
-            "[code add]" to "diff add",
-            "[code remove]" to "diff remove"
-        )
+        while (i < length) {
+            var hasBracket = false
+            var lineEnd = i
 
-        for (line in lines) {
+            while (lineEnd < length && code[lineEnd] != '\n') {
+                if (code[lineEnd] == '[') hasBracket = true
+                lineEnd++
+            }
+
             var lineModifierClass = ""
-            val filteredTokens = mutableListOf<HighlightToken>()
+            var matchedSpecialKey = ""
 
-            for (token in line.tokens) {
-                specialCodes.entries.firstOrNull { token.text.contains(it.key) }?.let{
-                    lineModifierClass = " ${it.value}"
-                    if(it.key == "[code focus]") hasFocusedLine = true
-                } ?: filteredTokens.add(token)
+            if (hasBracket) {
+                val lineStr = code.substring(i, lineEnd)
+                for ((key, value) in SPECIAL_CODES) {
+                    if (lineStr.contains(key)) {
+                        lineModifierClass = " $value"
+                        matchedSpecialKey = key
+                        if (key == "[code focus]") hasFocusedLine = true
+                        break
+                    }
+                }
             }
 
             sb.append("<span class=\"line").append(lineModifierClass).append("\">")
 
-            for (token in filteredTokens) {
-                token.cssClass?.let { sb.append("<span class=\"").append(it).append("\">") }
-                sb.append(escapeHtml(token.text))
-                token.cssClass?.let { sb.append("</span>") }
+            while (i < lineEnd) {
+                val currentClass = charClasses[i]
+                val tokenStart = i
+
+                while (i < lineEnd && charClasses[i] == currentClass) {
+                    i++
+                }
+
+                val chunk = code.substring(tokenStart, i)
+                val skip = matchedSpecialKey.isNotEmpty() && chunk.contains(matchedSpecialKey)
+
+                if (!skip) {
+                    if (currentClass != null) {
+                        sb.append("<span class=\"").append(currentClass).append("\">")
+                        sb.append(chunk.escapeHtml())
+                        sb.append("</span>")
+                    } else {
+                        sb.append(chunk.escapeHtml())
+                    }
+                }
             }
+
             sb.append("</span>\n")
+
+            if (i < length && code[i] == '\n') i++
         }
 
         return sb.toString().trimEnd('\n') to hasFocusedLine
     }
 
-    private fun escapeHtml(text: String): String {
-        return text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#x27;")
-    }
-
     class TagContext(val sb: StringBuilder = StringBuilder()) {
-        operator fun String.unaryPlus() {
-            sb.append(this)
-        }
-
+        operator fun String.unaryPlus() { sb.append(this) }
         fun tag(name: String, vararg classes: String, content: TagContext.() -> Unit = {}) {
             val classAttr = classes.filter { it.isNotEmpty() }.joinToString(" ")
             val classString = if (classAttr.isNotEmpty()) " class=\"$classAttr\"" else ""
-
             sb.append("<$name$classString>")
             this.content()
             sb.appendLine("</$name>")
         }
-
-        fun div(vararg classes: String, content: TagContext.() -> Unit = {}) {
-            tag("div", *classes, content = content)
-        }
-
-        fun span(vararg classes: String, content: TagContext.() -> Unit = {}) {
-            tag("span", *classes, content = content)
-        }
+        fun div(vararg classes: String, content: TagContext.() -> Unit = {}) { tag("div", *classes, content = content) }
+        fun span(vararg classes: String, content: TagContext.() -> Unit = {}) { tag("span", *classes, content = content) }
     }
 
     fun buildHtml(content: TagContext.() -> Unit): String {
@@ -215,7 +233,4 @@ object TreeSitterHighlighter {
         context.content()
         return context.sb.toString()
     }
-
-    data class HighlightToken(val text: String, val cssClass: String?)
-    data class HighlightLine(val tokens: List<HighlightToken>)
 }

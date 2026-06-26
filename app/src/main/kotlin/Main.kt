@@ -4,16 +4,12 @@ import Engine
 import io.methvin.watcher.DirectoryWatcher
 import isInside
 import kotlinx.coroutines.*
-import org.fusesource.jansi.AnsiConsole
 import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.measureTimedValue
 
 fun main(args: Array<String>) = runBlocking {
-    System.setProperty("jansi.passthrough", "true")
-    AnsiConsole.systemInstall()
-
     val log = LoggerFactory.getLogger("Main")
 
     if (args.isEmpty()) {
@@ -23,7 +19,7 @@ fun main(args: Array<String>) = runBlocking {
 
     val rootDir = File(args[0]).absoluteFile
     var outputDir = rootDir.resolve("build/site").absoluteFile
-    var host = "0.0.0.0"
+    var host = "localhost"
     var port = 8080
 
     var i = 1
@@ -50,10 +46,8 @@ fun main(args: Array<String>) = runBlocking {
         i++
     }
 
-    val engine = Engine()
-
     val (_, duration) = measureTimedValue {
-        engine.build(rootDir, outputDir)
+        Engine.build(rootDir, outputDir)
     }
     log.info("Build completed in $duration")
 
@@ -95,18 +89,18 @@ fun main(args: Array<String>) = runBlocking {
 
                     when {
                         isInside(rootDirAbsolute.resolve("assets"), changedFileAbsolute) -> {
-                            engine.buildAssets(rootDir, outputDir)
+                            Engine.buildAssets(rootDir, outputDir)
                         }
                         isInside(rootDirAbsolute.resolve("content"), changedFileAbsolute) ||
                                 isInside(rootDirAbsolute.resolve("pages"), changedFileAbsolute) -> {
                             if (changedFile.extension.lowercase() == "md") {
-                                engine.buildSinglePage(rootDir, outputDir, changedFile)
+                                Engine.buildSinglePage(rootDir, outputDir, changedFile)
                             } else {
-                                engine.build(rootDir, outputDir)
+                                Engine.build(rootDir, outputDir)
                             }
                         }
                         else -> {
-                            engine.build(rootDir, outputDir)
+                            Engine.build(rootDir, outputDir)
                         }
                     }
                 } catch (e: Exception) {

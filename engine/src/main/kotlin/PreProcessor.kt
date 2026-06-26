@@ -8,6 +8,8 @@ object PreProcessor {
     val REGION_NAME_REGEX = "[a-zA-Z_][a-zA-Z0-9_]*".toRegex()
     val ARGS_REGEX = Regex("""(\w+)\s*:\s*("[^"]+"|\S+)""")
 
+    val KD_REGEX = Regex("""```$KODEDOCS_PREFIX\s+([^`]*)```""")
+    val REF_REGEX = Regex("""^<<<\s+@/(?<path>.*?)(?<region>#.*)?$""", RegexOption.MULTILINE)
     private val languageMap = mapOf(
         "kt" to "kotlin",
         "java" to "java",
@@ -48,16 +50,18 @@ object PreProcessor {
 
     fun process(rootDir: File, input: File): String {
         val rawContent = input.readText()
-        
-        val regex = Regex("""```$KODEDOCS_PREFIX\s+([^`]*)```""")
-        val processedContent = rawContent.replace(regex) { matchResult ->
-            val args = parseArgs(matchResult.groupValues[1])
 
-            val file = args["file"] ?: throw IllegalArgumentException("File argument is required for kodedocs ${matchResult.value} in file ${input.path}")
-            val include = args["include"]?.split(",") ?: emptyList()
-            val exclude = args["exclude"]?.split(",") ?: emptyList()
-            val lines = args["lines"]?.split(",") ?: emptyList()
-            val lineNumbers = args["lineNumbers"]?.toIntOrNull() ?: 0
+        val processedContent = rawContent.replace(REF_REGEX) { matchResult ->
+//            val args = parseArgs(matchResult.groupValues[1])
+
+//            val file = args["file"] ?: throw IllegalArgumentException("File argument is required for kodedocs ${matchResult.value} in file ${input.path}")
+//            val include = args["include"]?.split(",") ?: emptyList()
+//            val exclude = args["exclude"]?.split(",") ?: emptyList()
+//            val lines = args["lines"]?.split(",") ?: emptyList()
+//            val lineNumbers = args["lineNumbers"]?.toIntOrNull() ?: 0
+
+            val file = matchResult.groups["path"]?.value ?: throw IllegalArgumentException("File argument is required for kodedocs ${matchResult.value} in file ${input.path}")
+            val include = matchResult.groups["region"]?.value?.substring(1)?.let{ listOf(it) } ?: emptyList()
 
             val codeFile = rootDir.resolve(file)
             if (!codeFile.exists()) throw IllegalArgumentException("File $file not found in ${input.name}")
@@ -65,7 +69,8 @@ object PreProcessor {
 
             val language = detectLanguage(codeFile.extension)
 
-            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```\n{lineNumbers=\"$lineNumbers\"}\n"
+            "```$language\n${processKodeDocs(codeContent, include, emptyList(), emptyList(), codeFile.path)}\n```"
+//            "```$language\n${processKodeDocs(codeContent, include, exclude, lines, codeFile.path)}\n```\n{lineNumbers=\"$lineNumbers\"}\n"
         }
         return processedContent
     }

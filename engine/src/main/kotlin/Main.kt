@@ -1,10 +1,8 @@
-import org.fusesource.jansi.AnsiConsole
+
 import java.io.File
 import kotlin.time.measureTimedValue
 
 fun main(args: Array<String>) {
-    System.setProperty("jansi.passthrough", "true")
-    AnsiConsole.systemInstall()
 
     if (args.isEmpty()) {
         println("Usage: kodedocs-engine <root_dir> [output_dir]")
@@ -17,7 +15,7 @@ fun main(args: Array<String>) {
     println("Building from ${rootDir.path} to ${outputDir.path}...")
     try {
         val (_, duration) = measureTimedValue {
-            Engine().build(rootDir, outputDir)
+            Engine.build(rootDir, outputDir)
         }
         println("Build completed in $duration")
     } catch (e: Exception) {
