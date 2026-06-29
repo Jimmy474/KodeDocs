@@ -13,7 +13,7 @@ fun main(args: Array<String>) = runBlocking {
     val log = LoggerFactory.getLogger("Main")
 
     if (args.isEmpty()) {
-        println("Usage: kodedocs <root_dir> [output_dir] [--host <host>] [--port <port>]")
+        log.info("Usage: kodedocs <root_dir> [output_dir] [--host <host>] [--port <port>]")
         return@runBlocking
     }
 
@@ -46,8 +46,9 @@ fun main(args: Array<String>) = runBlocking {
         i++
     }
 
+    val engine = Engine(rootDir, outputDir)
     val (_, duration) = measureTimedValue {
-        Engine.build(rootDir, outputDir)
+        engine.build()
     }
     log.info("Build completed in $duration")
 
@@ -89,18 +90,18 @@ fun main(args: Array<String>) = runBlocking {
 
                     when {
                         isInside(rootDirAbsolute.resolve("assets"), changedFileAbsolute) -> {
-                            Engine.buildAssets(rootDir, outputDir)
+                            engine.buildAssets(rootDir, outputDir)
                         }
                         isInside(rootDirAbsolute.resolve("content"), changedFileAbsolute) ||
                                 isInside(rootDirAbsolute.resolve("pages"), changedFileAbsolute) -> {
                             if (changedFile.extension.lowercase() == "md") {
-                                Engine.buildSinglePage(rootDir, outputDir, changedFile)
+                                engine.buildSinglePage(changedFile)
                             } else {
-                                Engine.build(rootDir, outputDir)
+                                engine.build()
                             }
                         }
                         else -> {
-                            Engine.build(rootDir, outputDir)
+                            engine.build()
                         }
                     }
                 } catch (e: Exception) {

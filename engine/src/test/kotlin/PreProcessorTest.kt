@@ -1,10 +1,30 @@
-import PreProcessor.Companion.REGION_NAME_REGEX
+
+import PreProcessor.REGION_NAME_REGEX
+import java.io.File
+import java.nio.file.Files
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class PreProcessorTest {
 
-    private val preProcessor = PreProcessor()
+    private lateinit var tempFile: File
+
+    @BeforeTest
+    fun setup() {
+        tempFile = Files.createTempFile("preprocessor_test", ".java").toFile()
+    }
+
+    @AfterTest
+    fun teardown() {
+        tempFile.delete()
+    }
+
+    private fun process(input: String, include: List<String> = emptyList(), exclude: List<String> = emptyList(), lineStrings: List<String> = emptyList()): String {
+        tempFile.writeText(input)
+        return PreProcessor.processKodeDocs(tempFile, include, exclude, lineStrings)
+    }
 
     @Test
     fun `test basic include`() {
@@ -16,7 +36,7 @@ class PreProcessorTest {
             }
         """.trimIndent()
         val expected = "public static void main() {}"
-        val result = preProcessor.processKodeDocs(input, listOf("main"), emptyList(), emptyList())
+        val result = process(input, listOf("main"), emptyList(), emptyList())
         assertEquals(expected, result)
     }
 
@@ -30,7 +50,7 @@ class PreProcessorTest {
             }
         """.trimIndent()
         val expected = "public class test {\n}"
-        val result = preProcessor.processKodeDocs(input, emptyList(), listOf("main"), emptyList())
+        val result = process(input, emptyList(), listOf("main"), emptyList())
         assertEquals(expected, result)
     }
 
@@ -48,19 +68,17 @@ class PreProcessorTest {
                 // #endregion main
             }
         """.trimIndent()
-        
-        // Include main, should include everything inside it (except region markers)
+
         val expectedMain = """
             public static void method(int someArg){
                 int temp = someArg;
                 temp++;
             }
         """.trimIndent()
-        assertEquals(expectedMain, preProcessor.processKodeDocs(input, listOf("main"), emptyList(), emptyList()))
+        assertEquals(expectedMain, process(input, listOf("main"), emptyList(), emptyList()))
 
-        // Include temp, should only include what's inside temp
         val expectedTemp = "temp++;"
-        assertEquals(expectedTemp, preProcessor.processKodeDocs(input, listOf("temp"), emptyList(), emptyList()))
+        assertEquals(expectedTemp, process(input, listOf("temp"), emptyList(), emptyList()))
     }
 
     @Test
@@ -78,13 +96,12 @@ class PreProcessorTest {
             }
         """.trimIndent()
 
-        // Include main, exclude temp
         val expected = """
             public static void method(int someArg){
                 int temp = someArg;
             }
         """.trimIndent()
-        val result = preProcessor.processKodeDocs(input, listOf("main"), listOf("temp"), emptyList())
+        val result = process(input, listOf("main"), listOf("temp"), emptyList())
         assertEquals(expected, result)
     }
 
@@ -98,8 +115,7 @@ class PreProcessorTest {
             // #endregion A
         """.trimIndent()
         
-        // If we include A but exclude B, B should be excluded even if it's inside A.
-        val result = preProcessor.processKodeDocs(input, listOf("A"), listOf("B"), emptyList())
+        val result = process(input, listOf("A"), listOf("B"), emptyList())
         assertEquals("", result.trim())
     }
 
@@ -115,7 +131,7 @@ class PreProcessorTest {
             line3
         """.trimIndent()
         val expected = "line1\nline2"
-        val result = preProcessor.processKodeDocs(input, listOf("reg1", "reg2"), emptyList(), emptyList())
+        val result = process(input, listOf("reg1", "reg2"), emptyList(), emptyList())
         assertEquals(expected, result)
     }
 
@@ -132,7 +148,7 @@ class PreProcessorTest {
         """.trimIndent()
         
         val expectedA = "line A1\nline AB"
-        assertEquals(expectedA, preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList()))
+        assertEquals(expectedA, process(input, listOf("A"), emptyList(), emptyList()))
     }
     
     @Test
@@ -147,7 +163,7 @@ class PreProcessorTest {
             // #endregion A
         """.trimIndent()
         val expected = "part 1\npart 2"
-        assertEquals(expected, preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList()))
+        assertEquals(expected, process(input, listOf("A"), emptyList(), emptyList()))
     }
 
     @Test
@@ -162,13 +178,11 @@ class PreProcessorTest {
             // #endregion main
         """.trimIndent()
         
-        // Exclude sub, should keep 1 and 3 if include is empty
         val expectedExcludeSub = "line 1\nline 3"
-        assertEquals(expectedExcludeSub, preProcessor.processKodeDocs(input, emptyList(), listOf("sub"), emptyList()))
+        assertEquals(expectedExcludeSub, process(input, emptyList(), listOf("sub"), emptyList()))
 
-        // Include main, exclude sub
         val expectedIncludeMainExcludeSub = "line 1\nline 3"
-        assertEquals(expectedIncludeMainExcludeSub, preProcessor.processKodeDocs(input, listOf("main"), listOf("sub"), emptyList()))
+        assertEquals(expectedIncludeMainExcludeSub, process(input, listOf("main"), listOf("sub"), emptyList()))
     }
 
     @Test
@@ -180,9 +194,9 @@ class PreProcessorTest {
         """.trimIndent()
         
         val exception = kotlin.test.assertFailsWith<IllegalArgumentException> {
-            preProcessor.processKodeDocs(input, emptyList(), emptyList(), emptyList(), "test.java")
+            process(input, emptyList(), emptyList(), emptyList())
         }
-        assertEquals("Invalid region name 'A B' in test.java:1. Valid Region name Regex: $REGION_NAME_REGEX", exception.message)
+        assertEquals("Invalid region name 'A B' in ${tempFile.name}:1. Valid Region name Regex: $REGION_NAME_REGEX", exception.message)
     }
 
     @Test
@@ -193,9 +207,9 @@ class PreProcessorTest {
         """.trimIndent()
         
         val exception = kotlin.test.assertFailsWith<IllegalArgumentException> {
-            preProcessor.processKodeDocs(input, emptyList(), emptyList(), emptyList(), "test.java")
+            process(input, emptyList(), emptyList(), emptyList())
         }
-        assertEquals("Region name is missing in test.java:1", exception.message)
+        assertEquals("Region name is missing in ${tempFile.name}:1", exception.message)
     }
 
     @Test
@@ -206,9 +220,9 @@ class PreProcessorTest {
         """.trimIndent()
         
         val exception = kotlin.test.assertFailsWith<IllegalArgumentException> {
-            preProcessor.processKodeDocs(input, emptyList(), emptyList(), emptyList(), "test.java")
+            process(input, emptyList(), emptyList(), emptyList())
         }
-        assertEquals("Invalid region name '123invalid' in test.java:1. Valid Region name Regex: $REGION_NAME_REGEX", exception.message)
+        assertEquals("Invalid region name '123invalid' in ${tempFile.name}:1. Valid Region name Regex: $REGION_NAME_REGEX", exception.message)
     }
 
     @Test
@@ -217,9 +231,8 @@ class PreProcessorTest {
             // #region A
             line 1
         """.trimIndent()
-        // including will stay 1 until the end
         val expected = "line 1"
-        assertEquals(expected, preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList()))
+        assertEquals(expected, process(input, listOf("A"), emptyList(), emptyList()))
     }
 
     @Test
@@ -230,7 +243,7 @@ class PreProcessorTest {
             // #endregion A
         """.trimIndent()
         val expected = "line 1 // comment"
-        assertEquals(expected, preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList()))
+        assertEquals(expected, process(input, listOf("A"), emptyList(), emptyList()))
     }
 
     @Test
@@ -242,7 +255,7 @@ class PreProcessorTest {
                 // #endregion A
             }
         """.trimIndent()
-        val result = preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList())
+        val result = process(input, listOf("A"), emptyList(), emptyList())
         assertEquals("int x = 1;", result)
     }
 
@@ -256,11 +269,9 @@ class PreProcessorTest {
                 // #endregion A
             }
         """.trimIndent()
-        val result = preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList())
-        // Both lines have 4 spaces indent. trimIndent() will remove them.
+        val result = process(input, listOf("A"), emptyList(), emptyList())
         assertEquals("int x = 1;\nint y = 2;", result)
     }
-
 
     @Test
     fun `test valid region names`() {
@@ -272,7 +283,7 @@ class PreProcessorTest {
             content2
             // #endregion validName2
         """.trimIndent()
-        val result = preProcessor.processKodeDocs(input, listOf("_validName", "validName2"), emptyList(), emptyList())
+        val result = process(input, listOf("_validName", "validName2"), emptyList(), emptyList())
         assertEquals("content1\ncontent2", result)
     }
 
@@ -284,7 +295,7 @@ class PreProcessorTest {
             //    #endregion    A   
         """.trimIndent()
         
-        val result = preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList(), "test.java")
+        val result = process(input, listOf("A"), emptyList(), emptyList())
         assertEquals("content", result)
     }
 
@@ -296,7 +307,7 @@ class PreProcessorTest {
             //#endregion A
         """.trimIndent()
         val expected = "content"
-        val result = preProcessor.processKodeDocs(input, listOf("A"), emptyList(), emptyList(), "test.java")
+        val result = process(input, listOf("A"), emptyList(), emptyList())
         assertEquals(expected, result)
     }
 }

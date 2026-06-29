@@ -16,7 +16,7 @@ import com.vladsch.flexmark.util.data.MutableDataHolder
 import com.vladsch.flexmark.util.data.MutableDataSet
 import kotlinx.serialization.Serializable
 
-object MarkDownParser {
+class MarkDownParser(siteConfig: Engine.SiteConfig) {
     private val options: MutableDataHolder = MutableDataSet().set(
         Parser.EXTENSIONS,
         listOf(
@@ -29,6 +29,7 @@ object MarkDownParser {
             EmojiExtension.create(),
             TocExtension.create(),
             SimTocExtension.create(),
+            HighlightExtension.create(siteConfig.languageAliases),
         )
     )
 

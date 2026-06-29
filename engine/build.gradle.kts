@@ -16,10 +16,7 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.jna)
     implementation(libs.jnaPlatform)
-    implementation(files(rootProject.file("libs/jtreesitter-0.26.1.jar")))
-    implementation(libs.kruezberg.treesitter.language.pack){
-        exclude("io.github.tree-sitter", "jtreesitter")
-    }
+    implementation(libs.xberg.treesitter.language.pack)
     implementation(libs.logback)
 
     implementation(libs.bundles.kotlinxEcosystem)
@@ -35,4 +32,11 @@ tasks.test {
 
 tasks.withType<JavaExec> {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.register<JavaExec>("runPerfTest") {
+    group = "application"
+    description = "Runs the standalone performance test"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("TempKt")
 }

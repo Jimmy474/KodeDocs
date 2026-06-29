@@ -12,10 +12,11 @@ fun main(args: Array<String>) {
     val rootDir = File(args[0]).absoluteFile
     val outputDir = if (args.size > 1) File(args[1]).absoluteFile else rootDir.resolve("build/site").absoluteFile
 
-    println("Building from ${rootDir.path} to ${outputDir.path}...")
+    println("Building from ${rootDir.path} to ${outputDir.path}")
     try {
+        val engine = Engine(rootDir, outputDir)
         val (_, duration) = measureTimedValue {
-            Engine.build(rootDir, outputDir)
+            engine.build()
         }
         println("Build completed in $duration")
     } catch (e: Exception) {

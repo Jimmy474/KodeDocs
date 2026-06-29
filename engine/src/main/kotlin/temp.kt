@@ -23,12 +23,13 @@ fun main() {
 //    fixFile(root)
 
 
-    val root = File("docs")
+    val root = File("../docs")
     val tries = 10
     val scores = mutableListOf<Long>()
+    val engine = Engine(root, root.resolve("build/site"))
     repeat(tries) {
         val (_, duration) = measureTimedValue {
-            Engine.build(root, root.resolve("build/site"))
+            engine.build()
         }
         println("Build attempt ${it + 1} completed in $duration")
         scores.add(duration.inWholeMilliseconds)

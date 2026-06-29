@@ -8,7 +8,6 @@ dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositories {
         mavenCentral()
-        flatDir { dirs(file("${rootDir.path}/libs")) }
     }
 }
 

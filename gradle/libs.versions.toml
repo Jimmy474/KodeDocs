@@ -8,7 +8,7 @@ directoryWatcher = "0.19.1"
 flexmark = "0.64.8"
 jsoup = "1.22.2"
 jna = "5.19.1"
-treesitterlanguagepack = "1.10.9"
+treesitterlanguagepack = "1.12.0"
 logback = "1.5.34"
 
 [libraries]
@@ -25,7 +25,7 @@ flexmark = { module = "com.vladsch.flexmark:flexmark-all", version.ref = "flexma
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jnaPlatform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
-kruezberg-treesitter-language-pack = { module = "dev.kreuzberg.treesitterlanguagepack:tree-sitter-language-pack", version.ref = "treesitterlanguagepack" }
+xberg-treesitter-language-pack = { module = "io.xberg.treesitterlanguagepack:tree-sitter-language-pack", version.ref = "treesitterlanguagepack" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref="logback" }
 
 [bundles]

@@ -956,7 +956,7 @@ pre .line{
     margin: 0 calc(-1 * var(--gutter-offset));
 }
 
-pre.has-focused:not(:hover) .line:not(.focused){
+pre:not(:hover):has(.focused) .line:not(.focused){
     filter: blur(0.1rem);
 }
 

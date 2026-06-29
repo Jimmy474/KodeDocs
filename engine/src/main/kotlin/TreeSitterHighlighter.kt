@@ -1,8 +1,10 @@
 
-import dev.kreuzberg.treesitterlanguagepack.TreeSitterLanguagePack
 import io.github.treesitter.jtreesitter.Parser
 import io.github.treesitter.jtreesitter.Query
 import io.github.treesitter.jtreesitter.QueryCursor
+import io.xberg.treesitterlanguagepack.ConversionErrorException
+import io.xberg.treesitterlanguagepack.TreeSitterLanguagePack
+import io.xberg.treesitterlanguagepack.TreeSitterLanguagePackRsException
 import org.slf4j.LoggerFactory
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -46,51 +48,21 @@ object TreeSitterHighlighter {
         cssClassCache.clear()
     }
 
-    private val fenceRegex = Regex(
-        pattern = """^(?<fence>`{3,})((?<lang>[a-z-]*)?(?<nolinenumbers>:no-line-numbers)?)\n(?<code>[\s\S]*?)\n(\k<fence>)$""",
-        options = setOf(RegexOption.MULTILINE)
-    )
-
-    fun highlightMarkdown(markdown: String, langAliases: Map<String, String>?): String {
-        return fenceRegex.replace(markdown) { match ->
-            val language = (match.groups["lang"]?.value?.takeIf { it.isNotBlank() } ?: "text").let {
-                langAliases?.get(it) ?: it
-            }
-            val code = match.groups["code"]?.value ?: ""
-            val (highlighted, hasFocused) = highlightCode(code, language)
-            val useLineNumbers = match.groups["nolinenumbers"] == null
-
-            buildHtml {
-                div(
-                    "kode-code-block",
-                    "language-${language.escapeHtml()}",
-                    if (useLineNumbers) "line-numbers-mode" else ""
-                ) {
-                    if (useLineNumbers) {
-                        div("line-numbers") {
-                            var lineCount = 1
-                            for (char in code) { if (char == '\n') lineCount++ }
-                            for (i in 1..lineCount) { span { +"$i" } }
-                        }
-                    }
-                    tag("pre", if (hasFocused) " has-focused" else "") {
-                        tag("code", "kode-code") { +highlighted }
-                    }
-                }
-            }
-        }
-    }
-
-    fun highlightCode(code: String, languageName: String): Pair<String, Boolean> {
+    fun highlightCode(code: String, languageName: String): String {
         val normalizedCode = code.replace("\r\n", "\n")
 
         if (languageName == "text") return renderPlain(normalizedCode)
 
-        if(!TreeSitterLanguagePack.hasLanguage(languageName)){
-            unavailableLanguages.add(languageName)
-            return renderPlain(normalizedCode)
+        val language = try {
+            TreeSitterLanguagePack.getLanguage(languageName) ?: return renderPlain(normalizedCode)
+        } catch (e: TreeSitterLanguagePackRsException) {
+            if(e.cause is ConversionErrorException){
+                unavailableLanguages.add(languageName)
+                return renderPlain(normalizedCode)
+            }else{
+                throw e
+            }
         }
-        val language = TreeSitterLanguagePack.getLanguage(languageName) ?: return renderPlain(normalizedCode)
 
         val query = queries.getOrPut(languageName) {
             val querySource = TreeSitterLanguagePack.getHighlightsQuery(languageName) ?: return renderPlain(normalizedCode)
@@ -136,7 +108,7 @@ object TreeSitterHighlighter {
         }
     }
 
-    fun renderPlain(code: String): Pair<String, Boolean> {
+    fun renderPlain(code: String): String {
         val sb = StringBuilder(code.length + code.length / 10)
         var i = 0
         val length = code.length
@@ -150,12 +122,11 @@ object TreeSitterHighlighter {
             i = lineEnd
             if (i < length && code[i] == '\n') i++
         }
-        return sb.toString().trimEnd('\n') to false
+        return sb.toString().trimEnd('\n')
     }
 
-    private fun renderHighlightedHtml(code: String, charClasses: Array<String?>): Pair<String, Boolean> {
+    private fun renderHighlightedHtml(code: String, charClasses: Array<String?>): String {
         val sb = StringBuilder(code.length + code.length / 2)
-        var hasFocusedLine = false
         var i = 0
         val length = code.length
 
@@ -177,7 +148,6 @@ object TreeSitterHighlighter {
                     if (lineStr.contains(key)) {
                         lineModifierClass = " $value"
                         matchedSpecialKey = key
-                        if (key == "[code focus]") hasFocusedLine = true
                         break
                     }
                 }
@@ -212,25 +182,6 @@ object TreeSitterHighlighter {
             if (i < length && code[i] == '\n') i++
         }
 
-        return sb.toString().trimEnd('\n') to hasFocusedLine
-    }
-
-    class TagContext(val sb: StringBuilder = StringBuilder()) {
-        operator fun String.unaryPlus() { sb.append(this) }
-        fun tag(name: String, vararg classes: String, content: TagContext.() -> Unit = {}) {
-            val classAttr = classes.filter { it.isNotEmpty() }.joinToString(" ")
-            val classString = if (classAttr.isNotEmpty()) " class=\"$classAttr\"" else ""
-            sb.append("<$name$classString>")
-            this.content()
-            sb.appendLine("</$name>")
-        }
-        fun div(vararg classes: String, content: TagContext.() -> Unit = {}) { tag("div", *classes, content = content) }
-        fun span(vararg classes: String, content: TagContext.() -> Unit = {}) { tag("span", *classes, content = content) }
-    }
-
-    fun buildHtml(content: TagContext.() -> Unit): String {
-        val context = TagContext()
-        context.content()
-        return context.sb.toString()
+        return sb.toString().trimEnd('\n')
     }
 }
